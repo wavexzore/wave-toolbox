@@ -1,6 +1,18 @@
 # 第三方资源（APK 等）
 third_party/
 
+# Playwright MCP 产物
+.playwright-mcp/
+
+# 真机走查截图
+.shots/
+
+# 文档（本地维护，不纳入 git）
+docs/
+
+# macOS
+.DS_Store
+
 # Gradle / Android
 .gradle/
 build/
