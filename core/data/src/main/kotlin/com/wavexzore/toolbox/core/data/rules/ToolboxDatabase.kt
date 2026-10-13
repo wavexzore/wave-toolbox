@@ -9,7 +9,7 @@ import com.wavexzore.toolbox.core.data.stats.StatRecordEntity
 
 @Database(
     entities = [RuleGroupEntity::class, RuleAppEntity::class, RuleErrorEntity::class, StatRecordEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class ToolboxDatabase : RoomDatabase() {
@@ -39,6 +39,14 @@ abstract class ToolboxDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_stat_records_at` ON `stat_records` (`at`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_stat_records_pkg` ON `stat_records` (`pkg`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_stat_records_kind` ON `stat_records` (`kind`)")
+            }
+        }
+
+        /** v2 → v3：统计明细新增 zone/provider 维度（T-207）。 */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `stat_records` ADD COLUMN `zone` TEXT")
+                db.execSQL("ALTER TABLE `stat_records` ADD COLUMN `provider` TEXT")
             }
         }
     }

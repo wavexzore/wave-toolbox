@@ -4,15 +4,19 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * 开屏跳过规则包 schema v1（T-001 冻结；与 `[基座]` RawRule 字段子集对齐 + adskip 专属扩展）。
+ * 开屏跳过规则包 schema v2（v1 兼容：缺省=旧语义；与 `[基座]` RawRule 字段子集对齐 + adskip 专属扩展）。
  *
- * 语义要点：
- * - `matches` 复用基座选择器语法（`[text*="跳过"]`、`@[vid="close"]`），命中后同样走过滤/排序；
- * - `keywords` 为该应用追加关键词（并入全局默认关键词）；
- * - `mode`: `splash`（仅开屏窗口期）/ `any`（任意界面弹窗）；
- * - `actionCd`/`actionMaximum` 按「应用 + activity 实例」作用域；
- * - `path`（drawingOrder+childCount 逐层索引）与 `position`（像素或百分比）为最后兜底；
- * - 未知字段忽略；坏文件隔离（loader 层）。
+ * v2 新增（Q-208 已批）：
+ * - `zone`：生效区域 `entry|activity|popup|any`（缺省由 `mode` 推导：splash→entry、any→any）；
+ * - `settleMs`：activity 区域稳定期（0~2000，默认 350）；
+ * - `popupAware`：弹窗窗口是否放行（null=按运行模式裁决：splash 拦、any 放行；显式值恒定）；
+ * - `suppressGeneric`：本组命中活动页时压制通用 keyword/vid 回退（默认 false）。
+ *
+ * v1 死字段接线（D-209）：`activityIds` 参与准入（非空时要求当前活动匹配）、`actionCd` 组级最小间隔、
+ * `delayMs` 组级年轻窗口延迟（默认 150=旧值）。
+ *
+ * 语义要点（不变）：`matches` 复用基座选择器语法、`keywords` 并入关键词、`actionCd/actionMaximum`
+ * 按「应用 + 实例」作用域、`path/position` 最后兜底、未知字段忽略、坏文件隔离（loader 层）。
  */
 @Serializable
 data class AdSkipPackFile(
@@ -22,7 +26,7 @@ data class AdSkipPackFile(
     val groups: List<AdSkipGroup> = emptyList(),
 ) {
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 1
+        const val CURRENT_SCHEMA_VERSION = 2
     }
 }
 
@@ -32,10 +36,13 @@ data class AdSkipGroup(
     val name: String = "",
     val order: Int = 0,
     val enabled: Boolean = true,
+    /** v1 字段；v2 起接线：非空时要求当前活动命中（前缀/后缀/全等）。 */
     val activityIds: List<String> = emptyList(),
     val excludeActivityIds: List<String> = emptyList(),
     /** `splash` | `any`。 */
     val mode: String = MODE_SPLASH,
+    /** v2：生效区域；null=由 mode 推导。 */
+    val zone: String? = null,
     /** 选择器（基座语法，OR 语义）。 */
     val matches: List<String> = emptyList(),
     /** 本应用追加关键词（OR 语义，并入默认关键词）。 */
@@ -44,16 +51,36 @@ data class AdSkipGroup(
     val path: String? = null,
     /** 坐标兜底（px 或 %，二选一）。 */
     @SerialName("position") val position: AdSkipPosition? = null,
-    /** 同实例冷却毫秒。 */
+    /** 组级最小间隔毫秒（v2 起生效；内置声明值多 ≤1200，受全局冷却支配→节奏不变）。 */
     val actionCd: Long = 800,
     /** 同实例最大执行次数。 */
     val actionMaximum: Int = 1,
-    /** 年轻窗口延迟毫秒（尺寸未稳期）。 */
+    /** 组级年轻窗口延迟毫秒（v2 起生效；默认 150=旧值）。 */
     val delayMs: Long = 150,
+    /** v2：activity 区域稳定期毫秒。 */
+    val settleMs: Long = 350,
+    /** v2：弹窗窗口放行（三态；null=按运行模式裁决）。 */
+    val popupAware: Boolean? = null,
+    /** v2：本组命中活动页时压制通用 keyword/vid 回退。 */
+    val suppressGeneric: Boolean = false,
 ) {
+    /** 生效区域（缺省推导，v1 等价）。 */
+    val effectiveZone: String
+        get() = zone ?: if (mode == MODE_ANY) ZONE_ANY else ZONE_ENTRY
+
+    /** 弹窗窗口是否放行（null 时按运行模式：splash 拦、any 放行——Q-206 已决议）。 */
+    fun popupAllowed(runMode: String): Boolean = popupAware ?: (runMode == MODE_ANY)
+
     companion object {
         const val MODE_SPLASH = "splash"
         const val MODE_ANY = "any"
+
+        const val ZONE_ENTRY = "entry"
+        const val ZONE_ACTIVITY = "activity"
+        const val ZONE_POPUP = "popup"
+        const val ZONE_ANY = "any"
+
+        val VALID_ZONES = setOf(ZONE_ENTRY, ZONE_ACTIVITY, ZONE_POPUP, ZONE_ANY)
     }
 }
 
@@ -82,6 +109,10 @@ object AdSkipPackCodec {
             require(group.mode == AdSkipGroup.MODE_SPLASH || group.mode == AdSkipGroup.MODE_ANY) {
                 "未知 mode=${group.mode}"
             }
+            require(group.zone == null || group.zone in AdSkipGroup.VALID_ZONES) {
+                "未知 zone=${group.zone}"
+            }
+            require(group.settleMs in 0..2000) { "settleMs 越界=${group.settleMs}" }
         }
         return pack
     }

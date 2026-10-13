@@ -9,6 +9,7 @@ import com.wavexzore.toolbox.core.accessibility.action.WindowTreeProvider
 import com.wavexzore.toolbox.core.accessibility.pipeline.A11yEventType
 import com.wavexzore.toolbox.core.accessibility.pipeline.EventPipeline
 import com.wavexzore.toolbox.core.automation.TaskEnvironment
+import com.wavexzore.toolbox.core.common.text.ClassNames
 import com.wavexzore.toolbox.core.rules.model.RawRule
 import com.wavexzore.toolbox.core.rules.model.RuleAction
 import com.wavexzore.toolbox.core.rules.model.RulePosition
@@ -170,17 +171,8 @@ class AndroidTaskEnvironment @Inject constructor(
         return null
     }
 
-    /** 真实 Activity 类名（排除框架组件类；与 RuleEngine 同口径）。 */
-    private fun isActivityLike(cls: String): Boolean {
-        if (cls.isBlank()) return false
-        if (cls.endsWith("Window") || cls.endsWith("WindowView") || cls.endsWith("PopupWindow")) return false
-        return !cls.startsWith("android.") &&
-            !cls.startsWith("androidx.") &&
-            !cls.startsWith("android.support.") &&
-            !cls.startsWith("com.android.internal.") &&
-            !cls.startsWith("com.google.android.material.") &&
-            !cls.startsWith("com.android.systemui.")
-    }
+    /** 真实 Activity 类名（排除框架组件类；R-209 归一：唯一实现于 [ClassNames]）。 */
+    private fun isActivityLike(cls: String): Boolean = ClassNames.isActivityLike(cls)
 
     companion object {
         const val TAG = "WaveA11y.TaskEnv"

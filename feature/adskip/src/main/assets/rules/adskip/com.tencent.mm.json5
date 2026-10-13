@@ -1,8 +1,9 @@
 // 微信（com.tencent.mm）— 关键词优先；弹窗组 any 模式兜底（schema: rules/adskip/README.md）
+// v2（T-205）：接管基座内置演示规则（builtin com.tencent.mm.json5 停用），启动图跳过改为本包 matches 表达
 {
-  schemaVersion: 1,
+  schemaVersion: 2,
   pkg: "com.tencent.mm",
-  packVersion: 1,
+  packVersion: 2,
   groups: [
     {
       id: "com.tencent.mm#splash",
@@ -10,6 +11,18 @@
       order: 0,
       mode: "splash",
       keywords: ["跳过", "关闭", "我知道了"],
+      actionCd: 800,
+      actionMaximum: 1,
+      delayMs: 150,
+    },
+    {
+      // 基座内置规则迁移（Q-209）：`[text="点击进入微信"]` 启动图按钮；activityIds 保持原约束
+      id: "com.tencent.mm#splash-entry",
+      name: "启动图按钮（基座规则迁移）",
+      order: 5,
+      mode: "splash",
+      activityIds: ["com.tencent.mm.ui.LauncherUI"],
+      matches: ['[text="点击进入微信"]'],
       actionCd: 800,
       actionMaximum: 1,
       delayMs: 150,
