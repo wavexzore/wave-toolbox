@@ -4,6 +4,9 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import com.wavexzore.toolbox.core.accessibility.pipeline.AnrGuard
+import com.wavexzore.toolbox.core.accessibility.pipeline.EventPipeline
+import com.wavexzore.toolbox.core.accessibility.pipeline.toA11yEvent
 import com.wavexzore.toolbox.core.data.settings.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.concurrent.atomic.AtomicLong
@@ -29,6 +32,12 @@ class SelectToSpeakService : AccessibilityService() {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
+    @Inject
+    lateinit var pipeline: EventPipeline
+
+    @Inject
+    lateinit var anrGuard: AnrGuard
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** 引擎总开关镜像（来自 DataStore；T-004 起决定事件是否进入管线）。 */
@@ -38,11 +47,16 @@ class SelectToSpeakService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        instance = this
         isConnected = true
         applyStaticServiceInfo()
         // 幂等；后续重复连接仅覆盖一次收集
         serviceScope.launch {
             settingsRepository.engineEnabled.collect { engineEnabled = it }
+        }
+        serviceScope.launch {
+            // T-004：管线出线事件交 ANR 守卫（系统无响应对话框自动点「等待」）
+            pipeline.events.collect { anrGuard.onEvent(it) }
         }
         Log.i(
             TAG,
@@ -71,10 +85,12 @@ class SelectToSpeakService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        val n = eventCount.incrementAndGet()
-        // T-003 仅计数留痕；T-004 接入管线
-        if (n <= 3 || n % 100 == 0L) {
-            Log.d(TAG, "event#$n type=${event.eventType} pkg=${event.packageName}")
+        try {
+            eventCount.incrementAndGet()
+            pipeline.offer(event.toA11yEvent())
+        } catch (t: Throwable) {
+            // 永不把异常抛回系统回调线程
+            Log.e(TAG, "onAccessibilityEvent failed", t)
         }
     }
 
@@ -84,6 +100,7 @@ class SelectToSpeakService : AccessibilityService() {
 
     override fun onDestroy() {
         isConnected = false
+        instance = null
         serviceScope.cancel()
         Log.i(TAG, "onDestroy: totalEvents=${eventCount.get()}")
         super.onDestroy()
@@ -91,6 +108,11 @@ class SelectToSpeakService : AccessibilityService() {
 
     companion object {
         const val TAG = "WaveA11y"
+
+        /** 当前连接实例（进程内单例；AnrGuard/动作执行者使用）。 */
+        @Volatile
+        var instance: SelectToSpeakService? = null
+            private set
 
         /** 连接状态镜像（进程内观测用；权威状态走 AccessibilityStateMonitor）。 */
         @Volatile

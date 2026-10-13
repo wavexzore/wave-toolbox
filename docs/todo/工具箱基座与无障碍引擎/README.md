@@ -18,15 +18,15 @@ schema_version: "1.0"
 feature_id: "toolbox-core"
 feature_name: "工具箱基座与无障碍引擎"
 status: "in_progress"
-current_task: "T-004"
-last_completed_task: "T-003"
-next_action: "执行 T-004：事件管线（过滤/归一化/100ms 节流/event 单线程消费/ANR 守卫）"
+current_task: "T-005"
+last_completed_task: "T-004"
+next_action: "执行 T-005：选择器引擎（NodeView/SnapshotTree/最小语法子集/匹配器 + fixtures，C-002 ≥30 例）"
 verification_status: "pass"
 research_status: "pass"
 call_chain_status: "pass"
 code_calibration_status: "pass"
-last_verification_command: "C-005 A/B/C 407B↔89517B PASS（2026-10-13）；./gradlew test lint :app:assembleDebug PASS"
-last_updated: "2026-10-13T22:55:00+08:00"
+last_verification_command: "C-006 PASS（19/19）；60 次滑屏压测无 ANR（2026-10-13）"
+last_updated: "2026-10-13T23:10:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
   - "01-实施计划.md#6-LLM任务队列"
@@ -129,7 +129,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | T-001 | Gradle 多模块骨架 + 版本目录 | done | none | C-001 PASS（APK 902KB） | 初始化并构建 |
 | T-002 | app 壳：Hilt、Compose 主题、导航、设置存储 | done | T-001 | C-004 PASS（安装+启动+持久化） | 首页空壳可运行 |
 | T-003 | SelectToSpeakService（伪装类名） + 配置 XML + manifest + 开启状态观测 | done | T-002 | C-005 PASS（407B↔89517B A/B/C） | 服务可开启 |
-| T-004 | 事件管线（过滤/节流/单线程/ANR 守卫） | todo | T-003 | none | 管线单测 |
+| T-004 | 事件管线（过滤/节流/单线程/ANR 守卫） | done | T-003 | C-006 PASS（19/19）+ 压测无 ANR | 管线单测 |
 | T-005 | 选择器引擎（NodeView 抽象/解析/匹配/快照 fixtures） | todo | T-001 | none | 单测通过 |
 | T-006 | 规则模型 + 仓库（JSON5/assets/Room）+ 版本与 activity 匹配 | todo | T-005 | none | 单测通过 |
 | T-007 | 动作执行器（点击链/手势/冷却/次数/回退） | todo | T-004,T-005 | none | 单测+手动 |
@@ -205,7 +205,7 @@ interface ToolFeature {
 | AC-ID | 验收项 | 覆盖任务 | 验证命令/证据 | Status |
 |---|---|---|---|---|
 | AC-001 | Debug 包可构建、安装、启动 | T-001,T-002 | `./gradlew :app:assembleDebug` + `adb install` | pass |
-| AC-002 | 服务开启后日志页持续出现事件记录 | T-003,T-004 | 手动：操作任意 App 后查看日志 | todo |
+| AC-002 | 服务开启后日志页持续出现事件记录 | T-003,T-004 | 手动：操作任意 App 后查看日志 | pass |
 | AC-003 | 选择器解析匹配单测覆盖正/反/边界 | T-005 | `./gradlew :core:selector:test` | todo |
 | AC-004 | 规则按 pkg+activity 命中并执行点击 | T-006,T-007 | 手动：用测试 Apk 或系统界面验证 | todo |
 | AC-005 | 编排器任务可等待条件、超时、取消 | T-008 | `./gradlew :core:automation:test` | todo |
