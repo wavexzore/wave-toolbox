@@ -36,6 +36,8 @@ dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:data"))
     implementation(project(":core:design"))
+    implementation(project(":core:feature-api"))
+    implementation(project(":core:selector"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.activity.compose)

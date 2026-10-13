@@ -72,7 +72,10 @@ dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:data"))
     implementation(project(":core:design"))
+    implementation(project(":core:feature-api"))
+    implementation(project(":feature:adskip"))
     implementation(project(":feature:settings"))
+    implementation(project(":feature:wechat"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

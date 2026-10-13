@@ -5,6 +5,7 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import com.wavexzore.toolbox.core.accessibility.action.RuleEngine
+import com.wavexzore.toolbox.core.accessibility.feature.FeatureRegistry
 import com.wavexzore.toolbox.core.accessibility.keepalive.KeepAliveService
 import com.wavexzore.toolbox.core.accessibility.keepalive.OverlayKeepAlive
 import com.wavexzore.toolbox.core.accessibility.pipeline.AnrGuard
@@ -44,6 +45,9 @@ class SelectToSpeakService : AccessibilityService() {
     @Inject
     lateinit var ruleEngine: RuleEngine
 
+    @Inject
+    lateinit var featureRegistry: FeatureRegistry
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** T-009：1×1 overlay 保活（第二重，与 FGS 独立）。 */
@@ -69,6 +73,8 @@ class SelectToSpeakService : AccessibilityService() {
         }
         // T-007：规则引擎（事件 → 匹配 → 动作）
         ruleEngine.start()
+        // T-010：特性 SPI 事件分发（注册表；开关过滤在表内）
+        featureRegistry.start()
         // T-009：保活（overlay + 前台常驻通知）
         overlayKeepAlive.attach()
         runCatching { KeepAliveService.start(this) }
@@ -117,6 +123,7 @@ class SelectToSpeakService : AccessibilityService() {
         isConnected = false
         instance = null
         ruleEngine.stop()
+        featureRegistry.stop()
         overlayKeepAlive.detach()
         serviceScope.cancel()
         Log.i(TAG, "onDestroy: totalEvents=${eventCount.get()}")

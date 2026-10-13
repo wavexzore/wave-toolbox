@@ -49,6 +49,14 @@ class SettingsRepository @Inject constructor(
     val setupCompleted: Flow<Boolean> = context.settingsDataStore.data
         .map { prefs -> prefs[KEY_SETUP_COMPLETED] ?: false }
 
+    /** 特性开关（`feature.<id>.enabled`，动态键；缺省取特性默认值）。 */
+    fun featureEnabled(id: String, default: Boolean): Flow<Boolean> = context.settingsDataStore.data
+        .map { prefs -> prefs[booleanPreferencesKey("feature.$id.enabled")] ?: default }
+
+    suspend fun setFeatureEnabled(id: String, enabled: Boolean) {
+        context.settingsDataStore.edit { prefs -> prefs[booleanPreferencesKey("feature.$id.enabled")] = enabled }
+    }
+
     suspend fun setEngineEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { prefs -> prefs[KEY_ENGINE_ENABLED] = enabled }
     }
