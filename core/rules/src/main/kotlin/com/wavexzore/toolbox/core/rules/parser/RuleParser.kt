@@ -1,6 +1,7 @@
 package com.wavexzore.toolbox.core.rules.parser
 
 import com.wavexzore.toolbox.core.rules.model.RawRuleGroup
+import com.wavexzore.toolbox.core.rules.model.RuleAction
 import com.wavexzore.toolbox.core.selector.SelectorParser
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -123,6 +124,9 @@ object RuleParser {
             if (rule.actionCd < 0) errors += RuleError(source, group.id, rule.id, "actionCd 为负")
             if (rule.actionMaximum != null && rule.actionMaximum <= 0) {
                 errors += RuleError(source, group.id, rule.id, "actionMaximum 必须为正")
+            }
+            if (rule.action == RuleAction.POSITION && rule.position == null) {
+                errors += RuleError(source, group.id, rule.id, "action=position 但未提供 position")
             }
         }
         return errors

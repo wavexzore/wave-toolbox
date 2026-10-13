@@ -83,8 +83,22 @@ enum class RuleAction {
     @SerialName("longClick")
     LONG_CLICK,
 
+    /** 点击命中节点中心（强制手势，跳过 performAction）。 */
+    @SerialName("clickCenter")
+    CLICK_CENTER,
+
+    /** 按规则 position 坐标点击（px 或 %）。 */
+    @SerialName("position")
+    POSITION,
+
     @SerialName("back")
     BACK,
+
+    @SerialName("scrollForward")
+    SCROLL_FORWARD,
+
+    @SerialName("scrollBackward")
+    SCROLL_BACKWARD,
 
     @SerialName("none")
     NONE,

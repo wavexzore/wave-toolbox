@@ -37,8 +37,26 @@ class SettingsRepository @Inject constructor(
     val allowPackages: Flow<Set<String>> = context.settingsDataStore.data
         .map { prefs -> prefs[KEY_ALLOW_PACKAGES] ?: emptySet() }
 
+    /** 坐标兜底（`engine.clickFallback`，performAction 失败/不可用时改用手势点按，默认 true）。 */
+    val clickFallback: Flow<Boolean> = context.settingsDataStore.data
+        .map { prefs -> prefs[KEY_CLICK_FALLBACK] ?: DEFAULT_CLICK_FALLBACK }
+
+    /** 点击校验毫秒（`engine.clickVerifyMs`，动作后多久复核节点仍在，10~2000，默认 200）。 */
+    val clickVerifyMs: Flow<Int> = context.settingsDataStore.data
+        .map { prefs -> (prefs[KEY_CLICK_VERIFY_MS] ?: DEFAULT_CLICK_VERIFY_MS).coerceIn(MIN_CLICK_VERIFY_MS, MAX_CLICK_VERIFY_MS) }
+
     suspend fun setEngineEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { prefs -> prefs[KEY_ENGINE_ENABLED] = enabled }
+    }
+
+    suspend fun setClickFallback(enabled: Boolean) {
+        context.settingsDataStore.edit { prefs -> prefs[KEY_CLICK_FALLBACK] = enabled }
+    }
+
+    suspend fun setClickVerifyMs(ms: Int) {
+        context.settingsDataStore.edit { prefs ->
+            prefs[KEY_CLICK_VERIFY_MS] = ms.coerceIn(MIN_CLICK_VERIFY_MS, MAX_CLICK_VERIFY_MS)
+        }
     }
 
     suspend fun setContentThrottleMs(ms: Int) {
@@ -55,10 +73,17 @@ class SettingsRepository @Inject constructor(
         val KEY_ENGINE_ENABLED = booleanPreferencesKey("engine.enabled")
         val KEY_CONTENT_THROTTLE_MS = intPreferencesKey("engine.contentThrottleMs")
         val KEY_ALLOW_PACKAGES = stringSetPreferencesKey("engine.allowPackages")
+        val KEY_CLICK_FALLBACK = booleanPreferencesKey("engine.clickFallback")
+        val KEY_CLICK_VERIFY_MS = intPreferencesKey("engine.clickVerifyMs")
 
         const val DEFAULT_ENGINE_ENABLED = true
         const val DEFAULT_CONTENT_THROTTLE_MS = 100
         const val MIN_CONTENT_THROTTLE_MS = 50
         const val MAX_CONTENT_THROTTLE_MS = 1000
+
+        const val DEFAULT_CLICK_FALLBACK = true
+        const val DEFAULT_CLICK_VERIFY_MS = 200
+        const val MIN_CLICK_VERIFY_MS = 10
+        const val MAX_CLICK_VERIFY_MS = 2000
     }
 }

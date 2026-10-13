@@ -34,6 +34,8 @@ kotlin {
 dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:data"))
+    implementation(project(":core:rules"))
+    implementation(project(":core:selector"))
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

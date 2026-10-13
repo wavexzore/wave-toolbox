@@ -152,6 +152,10 @@ class RuleParserTest {
         val text = """
             { id: "g", apps: [{id:"p"}], rules: [
                 { id: "l", matches: ['[text="x"]'], action: "longClick" },
+                { id: "c", matches: ['[text="x"]'], action: "clickCenter" },
+                { id: "p", matches: ['[text="x"]'], action: "position", position: { x: 10, y: 20 } },
+                { id: "sf", matches: ['[text="x"]'], action: "scrollForward" },
+                { id: "sb", matches: ['[text="x"]'], action: "scrollBackward" },
                 { id: "b", matches: ['[text="y"]'], action: "back" }
             ] }
         """.trimIndent()
@@ -159,6 +163,21 @@ class RuleParserTest {
         assertNotNull(group)
         assertTrue(errors.isEmpty())
         assertEquals(RuleAction.LONG_CLICK, group.rules[0].action)
-        assertEquals(RuleAction.BACK, group.rules[1].action)
+        assertEquals(RuleAction.CLICK_CENTER, group.rules[1].action)
+        assertEquals(RuleAction.POSITION, group.rules[2].action)
+        assertEquals(RuleAction.SCROLL_FORWARD, group.rules[3].action)
+        assertEquals(RuleAction.SCROLL_BACKWARD, group.rules[4].action)
+        assertEquals(RuleAction.BACK, group.rules[5].action)
+    }
+
+    @Test
+    fun `position action without position warns`() {
+        val (group, errors) = RuleParser.parseGroup(
+            """{ id: "g", apps: [{id:"p"}], rules: [{ id: "r", matches: ['[text="x"]'], action: "position" }] }""",
+            "t",
+        )
+        assertNotNull(group)
+        assertTrue(errors.any { it.ruleId == "r" && it.message.contains("position") })
+        assertTrue(errors.none { it.fatal })
     }
 }
