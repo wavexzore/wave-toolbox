@@ -1,2 +1,12 @@
 # 第三方资源（APK 等）
 third_party/
+
+# Gradle / Android
+.gradle/
+build/
+local.properties
+.kotlin/
+.idea/
+*.iml
+captures/
+keystore.properties

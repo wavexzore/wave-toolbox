@@ -17,22 +17,23 @@
 schema_version: "1.0"
 feature_id: "toolbox-core"
 feature_name: "工具箱基座与无障碍引擎"
-status: "todo"
-current_task: "T-001"
-last_completed_task: "none"
-next_action: "执行 T-001：初始化 Gradle 多模块工程骨架（Kotlin + Compose + 版本目录）并通过构建"
-verification_status: "not_run"
+status: "in_progress"
+current_task: "T-002"
+last_completed_task: "T-001"
+next_action: "执行 T-002：app 壳（Hilt、Compose 主题、导航、设置存储）→ 可安装启动空壳"
+verification_status: "pass"
 research_status: "pass"
 call_chain_status: "pass"
 code_calibration_status: "pass"
-last_verification_command: "none"
-last_updated: "2026-10-13T20:30:00+08:00"
+last_verification_command: "./gradlew test lint :app:assembleDebug（2026-10-13 PASS）"
+last_updated: "2026-10-13T22:10:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
   - "01-实施计划.md#6-LLM任务队列"
   - "02-实施状态与验证.md#3-执行日志"
 allowed_scope:
   - "settings.gradle.kts / build.gradle.kts / gradle/libs.versions.toml / gradle.properties"
+  - ".gitignore / local.properties"
   - "app/**"
   - "core/**"
   - "feature/**"
@@ -125,7 +126,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 
 | T-ID | 任务 | Status | DependsOn | Evidence | Next |
 |---|---|---|---|---|---|
-| T-001 | Gradle 多模块骨架 + 版本目录 | todo | none | none | 初始化并构建 |
+| T-001 | Gradle 多模块骨架 + 版本目录 | done | none | C-001 PASS（APK 902KB） | 初始化并构建 |
 | T-002 | app 壳：Hilt、Compose 主题、导航、设置存储 | todo | T-001 | none | 首页空壳可运行 |
 | T-003 | SelectToSpeakService（伪装类名） + 配置 XML + manifest + 开启状态观测 | todo | T-002 | none | 服务可开启 |
 | T-004 | 事件管线（过滤/节流/单线程/ANR 守卫） | todo | T-003 | none | 管线单测 |
