@@ -32,4 +32,3 @@ include(":core:design")
 // 功能特性（每个特性 = 一个可独立开关的模块）
 include(":feature:settings")
 include(":feature:adskip")
-include(":feature:wechat")

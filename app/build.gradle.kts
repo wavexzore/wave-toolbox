@@ -75,7 +75,6 @@ dependencies {
     implementation(project(":core:feature-api"))
     implementation(project(":feature:adskip"))
     implementation(project(":feature:settings"))
-    implementation(project(":feature:wechat"))
 
     implementation(libs.androidx.core.ktx)
 
