@@ -22,6 +22,9 @@ class HomeViewModel @Inject constructor(
     val accessibilityEnabled: StateFlow<Boolean> = accessibilityStateMonitor.serviceEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    val setupCompleted: StateFlow<Boolean> = settingsRepository.setupCompleted
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     fun openAccessibilitySettings() {
         accessibilityStateMonitor.openAccessibilitySettings()
     }

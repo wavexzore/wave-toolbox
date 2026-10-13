@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <application>
 
         <!--
@@ -23,6 +29,32 @@
                 android:resource="@xml/accessibility_service_config" />
 
         </service>
+
+        <!-- T-009/D-005：FGS(specialUse) 常驻通知（第二重保活） -->
+        <service
+            android:name="com.wavexzore.toolbox.core.accessibility.keepalive.KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="无障碍工具箱常驻：维持事件管线、规则引擎与状态通知在线" />
+        </service>
+
+        <!-- 通知操作按钮：切换引擎（exported 允许 adb/外部显式触发） -->
+        <receiver
+            android:name="com.wavexzore.toolbox.core.accessibility.keepalive.ToggleEngineReceiver"
+            android:exported="true" />
+
+        <!-- 开机恢复（第三重保活；直启兜底） -->
+        <receiver
+            android:name="com.wavexzore.toolbox.core.accessibility.keepalive.BootReceiver"
+            android:directBootAware="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

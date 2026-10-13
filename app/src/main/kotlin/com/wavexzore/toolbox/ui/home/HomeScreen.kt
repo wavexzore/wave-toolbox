@@ -32,10 +32,12 @@ import com.wavexzore.toolbox.BuildConfig
 @Composable
 fun HomeScreen(
     onOpenSettings: () -> Unit,
+    onOpenSetupGuide: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val engineEnabled by viewModel.engineEnabled.collectAsStateWithLifecycle()
     val accessibilityEnabled by viewModel.accessibilityEnabled.collectAsStateWithLifecycle()
+    val setupCompleted by viewModel.setupCompleted.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("wave工具箱") }) },
@@ -92,6 +94,27 @@ fun HomeScreen(
                         TextButton(onClick = viewModel::openAccessibilitySettings) {
                             Text(if (accessibilityEnabled) "查看设置" else "去开启")
                         }
+                    }
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "首次引导",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = if (setupCompleted || accessibilityEnabled) "已完成（可复查）" else "建议先完成：无障碍 → 电池优化 → 自启白名单",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(onClick = onOpenSetupGuide) { Text("打开引导") }
                     }
                 }
             }
