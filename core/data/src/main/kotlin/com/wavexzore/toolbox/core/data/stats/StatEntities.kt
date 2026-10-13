@@ -52,8 +52,14 @@ interface StatDao {
     @Query("SELECT COUNT(*) AS total, SUM(CASE WHEN ok THEN 1 ELSE 0 END) AS ok_count, SUM(CASE WHEN ok THEN 0 ELSE 1 END) AS fail_count FROM stat_records WHERE at >= :since")
     fun totalsSince(since: Long): Flow<StatsTotals>
 
+    @Query("SELECT COUNT(*) AS total, SUM(CASE WHEN ok THEN 1 ELSE 0 END) AS ok_count, SUM(CASE WHEN ok THEN 0 ELSE 1 END) AS fail_count FROM stat_records WHERE feature_id = :featureId AND at >= :since")
+    fun totalsSinceFor(featureId: String, since: Long): Flow<StatsTotals>
+
     @Query("SELECT pkg, COUNT(*) AS count, SUM(CASE WHEN ok THEN 1 ELSE 0 END) AS ok_count FROM stat_records WHERE at >= :since AND pkg IS NOT NULL GROUP BY pkg ORDER BY count DESC LIMIT :limit")
     fun topPackages(since: Long, limit: Int): Flow<List<PkgStat>>
+
+    @Query("SELECT pkg, COUNT(*) AS count, SUM(CASE WHEN ok THEN 1 ELSE 0 END) AS ok_count FROM stat_records WHERE feature_id = :featureId AND at >= :since AND pkg IS NOT NULL GROUP BY pkg ORDER BY count DESC LIMIT :limit")
+    fun topPackagesFor(featureId: String, since: Long, limit: Int): Flow<List<PkgStat>>
 
     @Query("SELECT kind, COUNT(*) AS count FROM stat_records WHERE at >= :since GROUP BY kind ORDER BY count DESC")
     fun byKind(since: Long): Flow<List<KindStat>>
