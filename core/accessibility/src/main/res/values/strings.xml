@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_label">wave工具箱</string>
+    <string name="accessibility_service_description">自动跳过开屏广告、清理微信僵尸好友。组件类名伪装（SelectToSpeak）以兼容微信节点树。</string>
+</resources>

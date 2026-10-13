@@ -35,6 +35,7 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val engineEnabled by viewModel.engineEnabled.collectAsStateWithLifecycle()
+    val accessibilityEnabled by viewModel.accessibilityEnabled.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("wave工具箱") }) },
@@ -64,6 +65,33 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.End,
                     ) {
                         TextButton(onClick = onOpenSettings) { Text("前往设置") }
+                    }
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "无障碍服务",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = if (accessibilityEnabled) "已开启" else "未开启（引擎需要它才能工作）",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (accessibilityEnabled) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(onClick = viewModel::openAccessibilitySettings) {
+                            Text(if (accessibilityEnabled) "查看设置" else "去开启")
+                        }
                     }
                 }
             }
