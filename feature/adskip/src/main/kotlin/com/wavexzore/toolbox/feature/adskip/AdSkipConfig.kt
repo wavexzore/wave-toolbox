@@ -52,6 +52,11 @@ class AdSkipConfig @Inject constructor(
         }
     }
 
+    /** 全部开启（清空禁用集合）。 */
+    suspend fun clearDisabled() {
+        context.adSkipDataStore.edit { prefs -> prefs[KEY_DISABLED_PACKAGES] = emptySet() }
+    }
+
     companion object {
         val KEY_MODE = stringPreferencesKey("adskip.mode")
         val KEY_EXTRA_KEYWORDS = stringSetPreferencesKey("adskip.keywords.extra")

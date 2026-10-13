@@ -7,20 +7,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -30,17 +18,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wavexzore.toolbox.core.accessibility.action.ActionRecord
 import com.wavexzore.toolbox.core.accessibility.pipeline.A11yEventType
 import com.wavexzore.toolbox.core.accessibility.pipeline.EventPipeline
+import com.wavexzore.toolbox.core.design.components.WaveDivider
+import com.wavexzore.toolbox.core.design.components.WaveNote
+import com.wavexzore.toolbox.core.design.components.WaveScaffold
+import com.wavexzore.toolbox.core.design.components.WaveTabs
+import com.wavexzore.toolbox.core.design.components.WaveTextAction
+import com.wavexzore.toolbox.core.design.components.WaveTopBar
+import com.wavexzore.toolbox.core.design.theme.Wave
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** 事件日志（T-010 双页签）：结构化事件流 + 规则动作流（命中/拒绝/重试）。 */
-@OptIn(ExperimentalMaterial3Api::class)
+/** 原始事件流（诊断）：结构化事件 + 规则动作双页签。 */
 @Composable
 fun EventLogScreen(
     onBack: () -> Unit,
@@ -51,53 +46,38 @@ fun EventLogScreen(
     val actions by viewModel.actions.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
 
-    Scaffold(
+    WaveScaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("事件日志") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    TextButton(onClick = viewModel::clear) { Text("清空") }
-                },
+            WaveTopBar(
+                title = "原始事件流",
+                onBack = onBack,
+                actions = { WaveTextAction("清空", onClick = viewModel::clear) },
             )
         },
-    ) { innerPadding ->
-        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-            TabRow(selectedTabIndex = tab) {
-                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("事件") })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("动作") })
-            }
+    ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            WaveTabs(titles = listOf("事件", "动作"), selected = tab, onSelect = { tab = it })
 
             if (tab == 0) {
-                Text(
-                    text = "收 ${stats.received} · 出 ${stats.dispatched} · 滤 ${stats.dropped} · 节 ${stats.throttled}（最近 ${recent.size} 条）",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                WaveNote(
+                    "收 ${stats.received} · 出 ${stats.dispatched} · 滤 ${stats.dropped} · 节 ${stats.throttled}（最近 ${recent.size} 条）",
+                    modifier = Modifier.padding(horizontal = 16.dp),
                 )
-                HorizontalDivider()
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    itemsIndexed(recent, key = { _, item -> item.seq }) { index, item ->
+                    items(recent, key = { it.seq }) { item ->
                         EventRow(item)
-                        if (index < recent.lastIndex) HorizontalDivider()
+                        WaveDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     }
                 }
             } else {
-                Text(
-                    text = "规则动作流（最近 ${actions.size} 条）· 命中 / 拒绝 / 复核重试",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                WaveNote(
+                    "规则动作流（最近 ${actions.size} 条）· 命中 / 拒绝 / 复核重试",
+                    modifier = Modifier.padding(horizontal = 16.dp),
                 )
-                HorizontalDivider()
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    itemsIndexed(actions, key = { _, item -> item.seq }) { index, item ->
+                    items(actions, key = { it.seq }) { item ->
                         ActionRow(item)
-                        if (index < actions.lastIndex) HorizontalDivider()
+                        WaveDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     }
                 }
             }
@@ -113,28 +93,20 @@ private fun EventRow(item: EventPipeline.RecentEvent) = with(item) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = timeFormat.format(Date(timeMillis)),
-                style = MaterialTheme.typography.labelSmall,
+                fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Wave.Ink3,
             )
-            Text(
-                text = type.shortLabel(),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            Text(type.shortLabel(), fontSize = 12.sp, color = Wave.BlueTx)
         }
         Text(
             text = "${packageName ?: "-"} ${className ?: ""}".trim(),
-            style = MaterialTheme.typography.bodySmall,
+            fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
+            color = Wave.Ink,
         )
         text?.let {
-            Text(
-                text = it,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
+            Text(it, fontSize = 12.sp, color = Wave.Ink2, maxLines = 1)
         }
     }
 }
@@ -145,30 +117,27 @@ private fun ActionRow(item: ActionRecord) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = timeFormat.format(Date(item.timeMillis)),
-                style = MaterialTheme.typography.labelSmall,
+                fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Wave.Ink3,
             )
             Text(
                 text = item.kind.shortLabel(),
-                style = MaterialTheme.typography.labelMedium,
-                color = if (item.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                fontSize = 12.sp,
+                color = if (item.ok) Wave.GreenTx else Wave.RedTx,
             )
-            Text(
-                text = item.ruleId,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Text(item.ruleId, fontSize = 11.sp, color = Wave.Ink3)
         }
         Text(
             text = buildString {
                 append(item.packageName ?: "-")
-                item.mechanism?.let { append(" · mech=$it") }
-                append(" · ok=${item.ok}")
-                item.detail?.let { append(" · $it") }
+                item.mechanism?.let { append(" · mech=").append(it) }
+                append(" · ok=").append(item.ok)
+                item.detail?.let { append(" · ").append(it) }
             },
-            style = MaterialTheme.typography.bodySmall,
+            fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
+            color = Wave.Ink,
             maxLines = 2,
         )
     }

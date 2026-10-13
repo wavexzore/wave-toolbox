@@ -27,9 +27,15 @@ interface ToolFeature {
     /** 事件分发（已按 [id] 过滤特性开关后调用）。 */
     fun onEvent(event: FeatureEvent) {}
 
-    /** 特性设置面板（有独立配置时覆写）。 */
+    /** 特性设置面板（有独立配置时覆写）。[onOpenApps] 用于跳转「按应用控制」二级页。 */
     @Composable
-    fun SettingsPane(scope: ColumnScope, modifier: Modifier) {
+    fun SettingsPane(scope: ColumnScope, modifier: Modifier, onOpenApps: () -> Unit) {
+        Unit
+    }
+
+    /** 特性的整屏二级页（如「按应用控制」）；由 `feature/{id}/apps` 路由渲染。 */
+    @Composable
+    fun AppsScreen(onBack: () -> Unit) {
         Unit
     }
 }

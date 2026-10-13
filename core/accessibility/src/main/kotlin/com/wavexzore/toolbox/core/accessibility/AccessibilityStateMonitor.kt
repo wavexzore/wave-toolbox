@@ -1,6 +1,7 @@
 package com.wavexzore.toolbox.core.accessibility
 
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.database.ContentObserver
@@ -54,8 +55,9 @@ class AccessibilityStateMonitor @Inject constructor(
         }
     }.distinctUntilChanged()
 
-    /** 当前是否启用（一次性查询）。 */
+    /** 当前是否启用（一次性查询）。MIUI 上 manager 列表偶发返回空，优先解析系统设置串。 */
     fun isEnabled(): Boolean {
+        if (isInEnabledListSetting()) return true
         val manager = context.getSystemService(AccessibilityManager::class.java) ?: return false
         return manager
             .getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
@@ -64,6 +66,17 @@ class AccessibilityStateMonitor @Inject constructor(
                 serviceInfo.packageName == context.packageName &&
                     serviceInfo.name == SelectToSpeakService::class.java.name
             }
+    }
+
+    private fun isInEnabledListSetting(): Boolean {
+        val flat = runCatching {
+            Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+        }.getOrNull() ?: return false
+        if (flat.isBlank()) return false
+        val expected = ComponentName(context.packageName, SelectToSpeakService::class.java.name)
+        return flat.split(':').any { part ->
+            ComponentName.unflattenFromString(part) == expected
+        }
     }
 
     /** 跳转系统无障碍设置页。 */

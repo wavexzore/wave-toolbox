@@ -96,6 +96,9 @@ class EventPipeline @Inject constructor(
     @Volatile
     private var allowPackages: Set<String> = emptySet()
 
+    @Volatile
+    private var logEnabled: Boolean = SettingsRepository.DEFAULT_EVENT_RECORD
+
     init {
         settingsScope.launch {
             settingsRepository.engineEnabled.collect { engineEnabled = it }
@@ -105,6 +108,9 @@ class EventPipeline @Inject constructor(
         }
         settingsScope.launch {
             settingsRepository.allowPackages.collect { allowPackages = it }
+        }
+        settingsScope.launch {
+            settingsRepository.eventRecordEnabled.collect { logEnabled = it }
         }
         consumeScope.launch { consumeLoop() }
     }
@@ -178,6 +184,7 @@ class EventPipeline @Inject constructor(
     }
 
     private fun appendRecent(recent: RecentEvent, now: Long) {
+        if (!logEnabled) return
         recentBuffer.addFirst(recent)
         while (recentBuffer.size > LOG_LIMIT) recentBuffer.removeLast()
         maybeFlush(now)
