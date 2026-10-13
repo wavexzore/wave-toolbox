@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import com.wavexzore.toolbox.core.accessibility.action.RuleEngine
 import com.wavexzore.toolbox.core.accessibility.pipeline.AnrGuard
 import com.wavexzore.toolbox.core.accessibility.pipeline.EventPipeline
 import com.wavexzore.toolbox.core.accessibility.pipeline.toA11yEvent
@@ -38,6 +39,9 @@ class SelectToSpeakService : AccessibilityService() {
     @Inject
     lateinit var anrGuard: AnrGuard
 
+    @Inject
+    lateinit var ruleEngine: RuleEngine
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** 引擎总开关镜像（来自 DataStore；T-004 起决定事件是否进入管线）。 */
@@ -58,6 +62,8 @@ class SelectToSpeakService : AccessibilityService() {
             // T-004：管线出线事件交 ANR 守卫（系统无响应对话框自动点「等待」）
             pipeline.events.collect { anrGuard.onEvent(it) }
         }
+        // T-007：规则引擎（事件 → 匹配 → 动作）
+        ruleEngine.start()
         Log.i(
             TAG,
             "onServiceConnected: info=[${describeServiceInfo()}], engineEnabled=$engineEnabled",
@@ -101,6 +107,7 @@ class SelectToSpeakService : AccessibilityService() {
     override fun onDestroy() {
         isConnected = false
         instance = null
+        ruleEngine.stop()
         serviceScope.cancel()
         Log.i(TAG, "onDestroy: totalEvents=${eventCount.get()}")
         super.onDestroy()

@@ -1,0 +1,22 @@
+{
+  // T-007 手动清单演示（微信；无害且可观察）
+  id: "toolbox.demo.mm",
+  name: "演示：微信（切到通讯录）",
+  order: 95,
+  enabled: true,
+  schemaVersion: 1,
+  apps: [{ id: "com.tencent.mm" }],
+  rules: [
+    {
+      id: "demo.mm@contactsTab",
+      name: "微信：切到通讯录",
+      order: 10,
+      activityIds: ["com.tencent.mm.ui.LauncherUI"],
+      matches: ['[text="通讯录"]', '[vid="icon_tv"]'],
+      action: "click",
+      actionCd: 1500,
+      actionMaximum: 1,
+      note: "LauncherUI 内点底部“通讯录”标签（幂等）"
+    }
+  ]
+}

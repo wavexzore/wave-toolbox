@@ -1,0 +1,21 @@
+{
+  // T-007 手动清单演示（浏览器；无害且可观察）
+  id: "toolbox.demo.chrome",
+  name: "演示：浏览器（展开近期标签）",
+  order: 90,
+  enabled: true,
+  schemaVersion: 1,
+  apps: [{ id: "com.android.chrome" }],
+  rules: [
+    {
+      id: "demo.chrome@more",
+      name: "浏览器：展开“查看更多”",
+      order: 0,
+      matches: ['[text="查看更多"]'],
+      action: "click",
+      actionCd: 1200,
+      actionMaximum: 1,
+      note: "NTP 点“查看更多”展开对应区块"
+    }
+  ]
+}
