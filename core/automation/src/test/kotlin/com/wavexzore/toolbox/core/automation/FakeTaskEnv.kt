@@ -41,6 +41,16 @@ class FakeTaskEnv : TaskEnvironment {
         return if (clickScript.isNotEmpty()) clickScript.removeFirst() else clickDefault
     }
 
+    override suspend fun tapAt(x: Int, y: Int): Boolean {
+        actions += "tap:$x,$y"
+        return if (clickScript.isNotEmpty()) clickScript.removeFirst() else clickDefault
+    }
+
+    override suspend fun setText(node: NodeView, text: String): Boolean {
+        actions += "setText:$text"
+        return true
+    }
+
     override suspend fun back(): Boolean {
         actions += "back"
         return backResult
@@ -50,6 +60,13 @@ class FakeTaskEnv : TaskEnvironment {
         actions += if (forward) "scrollDown" else "scrollUp"
         scrollHook?.invoke(forward)
         return scrollResult
+    }
+
+    var swipeResult = true
+
+    override suspend fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long): Boolean {
+        actions += "swipe:$x1,$y1->$x2,$y2"
+        return swipeResult
     }
 
     override suspend fun openApp(pkg: String) {

@@ -32,6 +32,7 @@ class AndroidNodeView internal constructor(
     override val isClickable: Boolean get() = source.isClickable
     override val isEditable: Boolean get() = source.isEditable
     override val isScrollable: Boolean get() = source.isScrollable
+    override val isChecked: Boolean get() = source.isChecked
     override val drawingOrder: Int? get() = source.drawingOrder.takeIf { it >= 0 }
     override val children: List<NodeView> get() = childViews
 

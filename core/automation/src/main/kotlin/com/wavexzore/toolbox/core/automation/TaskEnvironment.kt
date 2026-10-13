@@ -23,11 +23,20 @@ interface TaskEnvironment {
     /** 点击节点；返回是否执行成功。 */
     suspend fun click(node: NodeView): Boolean
 
+    /** 坐标手势点击（绕过 performAction，规避 RecyclerView 节点复用失效）。 */
+    suspend fun tapAt(x: Int, y: Int): Boolean = false
+
+    /** 向可编辑节点写入文本（ACTION_SET_TEXT）；返回是否执行成功。 */
+    suspend fun setText(node: NodeView, text: String): Boolean = false
+
     /** 全局返回。 */
     suspend fun back(): Boolean
 
     /** 滚动（方向：true=向后/下）。 */
     suspend fun scroll(forward: Boolean): Boolean
+
+    /** 手势滑动（起终点屏幕坐标）；不支持的环境返回 false。 */
+    suspend fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long = 300): Boolean = false
 
     /** 打开应用。 */
     suspend fun openApp(pkg: String)
