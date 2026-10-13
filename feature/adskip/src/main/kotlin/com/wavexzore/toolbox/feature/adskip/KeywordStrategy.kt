@@ -1,5 +1,6 @@
 package com.wavexzore.toolbox.feature.adskip
 
+import com.wavexzore.toolbox.core.accessibility.action.AndroidNodeView
 import com.wavexzore.toolbox.core.selector.NodeView
 
 /**
@@ -19,6 +20,14 @@ object KeywordStrategy {
     private const val TOP_AREA_RATIO = 0.25f
     private const val WIDE_CONTAINER_RATIO = 0.6f
     private const val MAX_ANCESTOR_CHECK = 6
+
+    /** 误操作修复（2026-10-14）：易误点关键词，需"顶部 35% 或 自/祖先可点击"约束。 */
+    private val AMBIGUOUS_KEYWORDS = setOf("关闭")
+
+    /** 角落类关键词（×/✕）：需"右上角 或 可点击"约束。 */
+    private val CORNER_KEYWORDS = setOf("×", "✕")
+    private const val CONSTRAINT_TOP_RATIO = 0.35f
+    private const val CONSTRAINT_RIGHT_RATIO = 0.45f
 
     val DEFAULT_KEYWORDS = listOf("跳过", "关闭", "×", "✕", "跳过广告", "关闭广告", "我知道了")
     val DEFAULT_EXCLUDES = listOf("跳过登录", "跳过引导", "跳过介绍", "跳过更新", "跳过设置", "关闭会员", "关闭提醒")
@@ -67,7 +76,9 @@ object KeywordStrategy {
             val text = raw.trim()
             if (text.isNotEmpty() && text.length <= MAX_TEXT_LEN) {
                 val matchedKeyword = keywords.firstOrNull { text.contains(it) }
-                if (matchedKeyword != null && excludes.none { text.contains(it) } && passesFilters(node, screenWidth, screenHeight)) {
+                if (matchedKeyword != null && excludes.none { text.contains(it) } && passesFilters(node, screenWidth, screenHeight) &&
+                    passesConstraint(node, matchedKeyword, screenWidth, screenHeight)
+                ) {
                     matchedPick = Pick(node, matchedKeyword)
                 }
             }
@@ -94,6 +105,35 @@ object KeywordStrategy {
         if (wide && node.text.isNullOrBlank()) return false
         // 不可点击也保留：点击可点击祖先/坐标兜底由执行器完成（李跳跳同序）
         return true
+    }
+
+    /** 误操作修复：易误点关键词的空间/可点击性约束。 */
+    private fun passesConstraint(node: NodeView, keyword: String, screenWidth: Int, screenHeight: Int): Boolean {
+        val ambiguous = keyword in AMBIGUOUS_KEYWORDS
+        val corner = keyword in CORNER_KEYWORDS
+        if (!ambiguous && !corner) return true
+        if (clickableSelfOrAncestor(node)) return true
+        val topArea = screenHeight > 0 && node.bounds.top < screenHeight * CONSTRAINT_TOP_RATIO
+        if (corner) {
+            val rightHalf = screenWidth > 0 && node.bounds.left > screenWidth * CONSTRAINT_RIGHT_RATIO
+            return topArea && rightHalf
+        }
+        return topArea
+    }
+
+    /** 自/祖先 4 级内可点击（Android 实际树）；快照树退化为仅自身。 */
+    private fun clickableSelfOrAncestor(node: NodeView): Boolean {
+        if (node.isClickable) return true
+        val android = node as? AndroidNodeView ?: return false
+        var cur = runCatching { android.source.parent }.getOrNull()
+        var depth = 0
+        while (cur != null && depth < 4) {
+            val c = cur
+            if (runCatching { c.isClickable }.getOrDefault(false)) return true
+            cur = runCatching { c.parent }.getOrNull()
+            depth++
+        }
+        return false
     }
 
     /** D-103 排序：顶部区域 → Y 最小 → X 靠右。 */
