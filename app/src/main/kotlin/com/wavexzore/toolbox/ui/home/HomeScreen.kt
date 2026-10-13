@@ -1,5 +1,6 @@
 package com.wavexzore.toolbox.ui.home
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +17,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -33,11 +35,13 @@ import com.wavexzore.toolbox.BuildConfig
 fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenSetupGuide: () -> Unit,
+    onOpenFeature: (String) -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val engineEnabled by viewModel.engineEnabled.collectAsStateWithLifecycle()
     val accessibilityEnabled by viewModel.accessibilityEnabled.collectAsStateWithLifecycle()
     val setupCompleted by viewModel.setupCompleted.collectAsStateWithLifecycle()
+    val features by viewModel.features.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("wave工具箱") }) },
@@ -123,9 +127,23 @@ fun HomeScreen(
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("功能", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(8.dp))
-                    FeatureRow("开屏广告自动跳过", "待接入")
-                    HorizontalDivider()
-                    FeatureRow("微信僵尸好友清理", "待接入")
+                    if (features.isEmpty()) {
+                        Text(
+                            text = "暂无已注册特性",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    features.forEachIndexed { index, feature ->
+                        if (index > 0) HorizontalDivider()
+                        FeatureRow(
+                            title = feature.name,
+                            subtitle = feature.description,
+                            enabled = feature.enabled,
+                            onToggle = { viewModel.setFeatureEnabled(feature.id, it) },
+                            onClick = { onOpenFeature(feature.id) },
+                        )
+                    }
                 }
             }
 
@@ -140,22 +158,32 @@ fun HomeScreen(
 }
 
 @Composable
-private fun FeatureRow(title: String, tag: String) {
+private fun FeatureRow(
+    title: String,
+    subtitle: String,
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 12.dp),
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = tag,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        Switch(checked = enabled, onCheckedChange = onToggle)
     }
 }

@@ -21,6 +21,8 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -68,6 +70,39 @@ class RuleEngine @Inject constructor(
 
     /** 已执行动作数（诊断/证据）。 */
     val actionCount = AtomicLong()
+
+    private val _recentActions = MutableStateFlow<List<ActionRecord>>(emptyList())
+
+    /** 最近动作流（UI 事件日志页「动作」页签；400ms 合并发布）。 */
+    val recentActions: StateFlow<List<ActionRecord>> = _recentActions
+
+    private val actionBuffer = ArrayDeque<ActionRecord>(ACTION_LOG_LIMIT + 1)
+    private var actionJournalSeq = 0L
+    private var lastActionFlushAt = 0L
+
+    fun clearActions() {
+        actionBuffer.clear()
+        _recentActions.value = emptyList()
+    }
+
+    private fun appendAction(
+        kind: ActionRecord.Kind,
+        rule: RawRule,
+        pkg: String?,
+        mechanism: String? = null,
+        ok: Boolean,
+        detail: String? = null,
+        now: Long = System.currentTimeMillis(),
+    ) {
+        actionBuffer.addFirst(
+            ActionRecord(++actionJournalSeq, now, kind, rule.id, pkg, mechanism, ok, detail),
+        )
+        while (actionBuffer.size > ACTION_LOG_LIMIT) actionBuffer.removeLast()
+        if (now - lastActionFlushAt >= ACTION_FLUSH_INTERVAL_MS) {
+            lastActionFlushAt = now
+            _recentActions.value = actionBuffer.toList()
+        }
+    }
 
     fun start() {
         running = true
@@ -137,6 +172,7 @@ class RuleEngine @Inject constructor(
             }.getOrElse { t -> ActionExecutor.Result(false, "exception", reason = t.message) }
             actionSeq++
             actionCount.incrementAndGet()
+            appendAction(ActionRecord.Kind.ACTION, rule, pkg, result.mechanism, result.ok, result.reason)
             Log.d(
                 TAG,
                 "action#$actionSeq rule=${rule.id} pkg=$pkg act=${rule.action} mech=${result.mechanism} " +
@@ -164,6 +200,7 @@ class RuleEngine @Inject constructor(
             val result = executor.execute(rule, freshTarget as? AndroidNodeView, picked.tree.screenWidth, picked.tree.screenHeight)
             actionSeq++
             actionCount.incrementAndGet()
+            appendAction(ActionRecord.Kind.VERIFY_RETRY, rule, ledger.packageName, result.mechanism, result.ok, result.reason)
             Log.d(TAG, "verify-retry#$actionSeq rule=${rule.id} mech=${result.mechanism} ok=${result.ok}")
         }
     }
@@ -226,6 +263,7 @@ class RuleEngine @Inject constructor(
         if (now - last < DENY_LOG_INTERVAL_MS) return
         lastDenyLogAt[rule.id] = now
         Log.d(TAG, "deny($reason) rule=${rule.id} pkg=$pkg")
+        appendAction(ActionRecord.Kind.DENY, rule, pkg, ok = false, detail = reason?.name, now = now)
     }
 
     private fun logMiss(rule: RawRule, reason: String, pkg: String, now: Long) {
@@ -234,6 +272,7 @@ class RuleEngine @Inject constructor(
         if (now - last < MISS_LOG_INTERVAL_MS) return
         lastDenyLogAt[key] = now
         Log.d(TAG, "miss rule=${rule.id} pkg=$pkg reason=$reason")
+        appendAction(ActionRecord.Kind.MISS, rule, pkg, ok = false, detail = reason, now = now)
     }
 
     private fun logThrottled(key: String, message: String) {
@@ -260,5 +299,9 @@ class RuleEngine @Inject constructor(
 
         /** 同规则 miss / 树状态日志最小间隔。 */
         private const val MISS_LOG_INTERVAL_MS = 2_000L
+
+        /** 动作流环容量与 UI 合并发布间隔。 */
+        const val ACTION_LOG_LIMIT = 100
+        const val ACTION_FLUSH_INTERVAL_MS = 400L
     }
 }

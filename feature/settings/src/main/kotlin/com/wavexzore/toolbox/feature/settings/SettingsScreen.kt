@@ -37,6 +37,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenEventLog: () -> Unit,
     onOpenSetupGuide: () -> Unit,
+    onOpenSnapshot: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -98,7 +99,9 @@ fun SettingsScreen(
 
             SectionTitle("诊断")
 
-            PlainRow("事件日志", "查看（实时）", onClick = onOpenEventLog)
+            PlainRow("事件日志", "事件/动作双页签（实时）", onClick = onOpenEventLog)
+            HorizontalDivider()
+            PlainRow("快照检查器", "导出当前窗口树 JSON", onClick = onOpenSnapshot)
             HorizontalDivider()
             PlainRow("应用白名单", if (uiState.allowPackages.isEmpty()) "全部应用" else "${uiState.allowPackages.size} 个应用")
         }

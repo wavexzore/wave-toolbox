@@ -32,8 +32,10 @@ kotlin {
 }
 
 dependencies {
+    implementation(project(":core:automation"))
     implementation(project(":core:common"))
     implementation(project(":core:data"))
+    implementation(project(":core:feature-api"))
     implementation(project(":core:rules"))
     implementation(project(":core:selector"))
     implementation(libs.kotlinx.coroutines.android)
