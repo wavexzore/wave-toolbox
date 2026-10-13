@@ -8,7 +8,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.wavexzore.toolbox.core.accessibility.action.ActionExecutor
 import com.wavexzore.toolbox.core.accessibility.action.AndroidNodeView
+import com.wavexzore.toolbox.core.accessibility.action.ClickVerifier
+import com.wavexzore.toolbox.core.accessibility.action.NodeAdapter
 import com.wavexzore.toolbox.core.accessibility.action.WindowTreeProvider
+import com.wavexzore.toolbox.core.common.text.ClassNames
+import com.wavexzore.toolbox.core.data.settings.SettingsRepository
 import com.wavexzore.toolbox.core.data.stats.StatsRepository
 import com.wavexzore.toolbox.core.feature.api.FeatureEvent
 import com.wavexzore.toolbox.core.feature.api.ToolFeature
@@ -17,15 +21,33 @@ import com.wavexzore.toolbox.core.rules.model.RuleAction
 import com.wavexzore.toolbox.core.rules.model.RulePosition
 import com.wavexzore.toolbox.core.selector.NodeView
 import com.wavexzore.toolbox.core.selector.SelectorEngine
+import com.wavexzore.toolbox.feature.adskip.infra.AttemptScheduler
+import com.wavexzore.toolbox.feature.adskip.infra.Heartbeat
+import com.wavexzore.toolbox.feature.adskip.infra.OemQuirks
+import com.wavexzore.toolbox.feature.adskip.infra.PopupClassifier
+import com.wavexzore.toolbox.feature.adskip.infra.SkipGate
+import com.wavexzore.toolbox.feature.adskip.infra.WindowBounds
+import com.wavexzore.toolbox.feature.adskip.infra.WindowTracker
+import com.wavexzore.toolbox.feature.adskip.profile.AdProfileFactory
+import com.wavexzore.toolbox.feature.adskip.profile.AppAdProfile
+import com.wavexzore.toolbox.feature.adskip.profile.PsyoneBrainmusicProfile
+import com.wavexzore.toolbox.feature.adskip.strategy.Candidate
+import com.wavexzore.toolbox.feature.adskip.strategy.CandidateProvider
+import com.wavexzore.toolbox.feature.adskip.strategy.KeywordProvider
+import com.wavexzore.toolbox.feature.adskip.strategy.MatchProvider
+import com.wavexzore.toolbox.feature.adskip.strategy.NodeIdentity
+import com.wavexzore.toolbox.feature.adskip.strategy.PathProvider
+import com.wavexzore.toolbox.feature.adskip.strategy.PositionProvider
+import com.wavexzore.toolbox.feature.adskip.strategy.ProviderContext
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
+import dagger.multibindings.Multibinds
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -37,22 +59,29 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
- * 开屏广告自动跳过特性（T-002/T-004/T-005/T-006/T-007）。
+ * 开屏广告自动跳过特性（T-002/T-004/T-005/T-006/T-007；T-201 基础设施外置；T-203 Provider 链）。
  *
- * 链路：窗口/内容事件 → 作用域检查（总开关由注册表过滤、单 App 名单、mode 窗口期）→
- * 关键词策略（Y 最小 + 顶部优先）→ 规则包 `matches` → `path` → `position` 兜底 →
- * [ActionExecutor] 点击（performAction→祖先→坐标）→ 冷却/限次/统计/日志。
+ * 链路：窗口/内容事件 → 作用域检查（总开关由注册表过滤、单 App 权限、mode 窗口期）→ [SkipGate] 区域守卫 →
+ * Provider 链（keyword → match → path → position；profile 可重排/抑制/禁用）→ [ActionExecutor] 点击
+ * （performAction→祖先→坐标）→ 冷却/去重/限次/复核/统计/日志。
  *
- * 预算：单次事件最多 3 次尝试、间隔 200ms；年轻窗口首屏 CONTENT 事件延迟 150ms。
+ * 基础设施（唯一事实源，`infra/`）：[WindowTracker] 窗口令牌、[PopupClassifier] 弹窗判别、
+ * [AttemptScheduler] 预算/冷却/去重键、[SkipGate] 守卫、[OemQuirks] 厂商横切。
+ * 策略层（`strategy/`）：[CandidateProvider] 链与候选身份（去 text）。
+ *
+ * 预算不变式：单次事件最多 3 次尝试、间隔 200ms；`tree=null`/无候选不消耗预算（仅真实点击后计数）；
+ * 心跳（T-203）：入口 5s 窗口内自 +500ms 起每 750ms 单次尝试一次，成功即止/实例更替即取消。
  */
 @Singleton
 class AdSkipFeature @Inject constructor(
     @ApplicationContext private val context: Context,
     private val config: AdSkipConfig,
     private val loader: AdSkipPackLoader,
+    private val profileFactory: AdProfileFactory,
     private val treeProvider: WindowTreeProvider,
     private val executor: ActionExecutor,
     private val statsRepository: StatsRepository,
+    private val settings: SettingsRepository,
 ) : ToolFeature {
 
     override val id: String = "adskip"
@@ -63,6 +92,39 @@ class AdSkipFeature @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val selectorEngine = SelectorEngine()
 
+    // ---- 基础设施（T-201；行为等价迁移） ----
+
+    internal val quirks = OemQuirks()
+
+    internal val classifier = PopupClassifier(
+        quirks = quirks,
+        windowBounds = { pkg ->
+            treeProvider.focusedWindowBounds(pkg)?.let { WindowBounds(it.left, it.top, it.right, it.bottom) }
+        },
+        screenSize = {
+            val dm = context.resources.displayMetrics
+            dm.widthPixels to dm.heightPixels
+        },
+    )
+
+    internal val tracker = WindowTracker(classifier, quirks)
+
+    internal val scheduler = AttemptScheduler()
+
+    internal val gate = SkipGate(classifier)
+
+    private val heartbeat = Heartbeat(HEARTBEAT_FIRST_MS, HEARTBEAT_INTERVAL_MS)
+
+    // ---- 策略链（T-203；默认链序=关键词(vid 并入) → matches → path → position） ----
+
+    private val defaultProviders: List<CandidateProvider> =
+        listOf(KeywordProvider(), MatchProvider(), PathProvider(), PositionProvider())
+
+    private val providerById: Map<String, CandidateProvider> = defaultProviders.associateBy { it.id }
+
+    /** 已见实例号（触发旧实例态清理/心跳）。 */
+    private val seenInstances = ConcurrentHashMap<String, Long>()
+
     @Volatile
     private var mode: String = AdSkipConfig.DEFAULT_MODE
 
@@ -72,21 +134,16 @@ class AdSkipFeature @Inject constructor(
     @Volatile
     private var disabledPackages: Set<String> = emptySet()
 
-    private data class WindowMark(val activity: String?, val at: Long, val instance: Long)
-
-    private val windows = ConcurrentHashMap<String, WindowMark>()
-    private val instanceSeq = AtomicLong()
-    private val perInstanceCount = ConcurrentHashMap<String, Int>()
-    private val perInstanceAttempts = ConcurrentHashMap<String, Int>()
-    private val lastAttemptAt = ConcurrentHashMap<String, Long>()
-    private val lastClickAt = ConcurrentHashMap<String, Long>()
-    private val firstContentSeen = ConcurrentHashMap<String, Boolean>()
-    private val inFlight = ConcurrentHashMap<String, Boolean>()
-    private val missLogged = ConcurrentHashMap.newKeySet<String>()
-
-    /** 最近一次判定为前台的包（用于"进入前台=新开屏窗口"与后台跳过的判定）。 */
     @Volatile
-    private var lastForegroundPkg: String? = null
+    private var perAppModes: Map<String, String> = emptyMap()
+
+    /** 入口窗口毫秒（T-206 起可配；当前=常量）。 */
+    @Volatile
+    private var entryWindowMs: Long = SPLASH_WINDOW_MS
+
+    /** 点击复核延迟（与基座 RuleEngine 同源设置）。 */
+    @Volatile
+    private var clickVerifyMs: Long = SettingsRepository.DEFAULT_CLICK_VERIFY_MS.toLong()
 
     private val _eventCount = MutableStateFlow(0L)
 
@@ -107,137 +164,136 @@ class AdSkipFeature @Inject constructor(
         scope.launch { config.mode.collect { mode = it } }
         scope.launch { config.extraKeywords.collect { extraKeywords = it.toList() } }
         scope.launch { config.disabledPackages.collect { disabledPackages = it } }
+        scope.launch { config.perAppMode.collect { perAppModes = it } }
+        scope.launch { config.entryWindowMs.collect { entryWindowMs = it } }
+        scope.launch { settings.clickVerifyMs.collect { clickVerifyMs = it.toLong() } }
     }
+
+    private fun pkgMode(pkg: String): String = PkgMode.effective(mode, perAppModes, disabledPackages, pkg)
 
     override fun onEvent(event: FeatureEvent) {
         _eventCount.value = _eventCount.value + 1
         val pkg = event.packageName ?: return
         if (pkg == context.packageName) return
-        if (pkg in disabledPackages) return
-        val now = System.currentTimeMillis()
+        val runMode = pkgMode(pkg)
+        if (runMode == PkgMode.OFF) return
 
         // 误操作修复（2026-10-14）：包进入前台 = 新开屏窗口；非前台不点
         val foreground = treeProvider.isAppForeground(pkg)
+
         if (event.type == TYPE_WINDOW_STATE_CHANGED && foreground) {
-            Log.d(TAG, "wsc pkg=$pkg cls=${event.className} text=${event.text} small=${isSmallWindow(pkg)}")
-        }
-        if (foreground && pkg != lastForegroundPkg) {
-            lastForegroundPkg = pkg
-            newInstance(pkg, event.className ?: windows[pkg]?.activity, now)
+            Log.d(
+                TAG,
+                "wsc pkg=$pkg cls=${event.className} text=${event.text} " +
+                    "winPopup=${classifier.isPopupWindow(pkg)} clsPopup=${classifier.isPopupWindowClass(event.className)} " +
+                    "noise=${quirks.matchesNoiseClass(event.className)}",
+            )
         }
 
-        if (event.type == TYPE_WINDOW_STATE_CHANGED) {
-            val activity = event.className
-            val prev = windows[pkg]
-            when {
-                activity == null -> Unit
-                prev == null -> newInstance(pkg, activity, now)
-                activity != prev.activity ->
-                    if (foreground && looksLikeActivity(activity) && !isSmallWindow(pkg)) {
-                        // 仅真实 Activity 且为全屏窗口才重置开屏窗口；抽屉/弹窗等小窗不重置
-                        newInstance(pkg, activity, now)
-                    } else {
-                        windows[pkg] = prev.copy(activity = activity)
-                    }
-            }
+        var mark = tracker.current(pkg)
+        if (foreground) {
+            mark = tracker.onForeground(pkg, event.className ?: mark?.activity)
         }
-        val mark = windows[pkg] ?: newInstanceMark(pkg, null, now)
-        val instanceKey = "$pkg#${mark.instance}"
+        if (event.type == TYPE_WINDOW_STATE_CHANGED) {
+            mark = tracker.onWindowStateChanged(pkg, event.className, runMode, foreground)
+        }
+        mark = mark ?: tracker.ensure(pkg, null)
+        val instanceKey = tracker.instanceKey(pkg, mark)
+
+        val lastSeen = seenInstances.put(pkg, mark.instance)
+        if (lastSeen == null || lastSeen != mark.instance) {
+            scheduler.retainOnly(pkg, instanceKey)
+            if (foreground) launchHeartbeat(pkg, mark, instanceKey)
+        }
 
         if (!foreground) return
 
-        // mode=splash：仅在开屏窗口新鲜期（进入前台/页面切换后 4s）内动作
-        val splashActive = mode == AdSkipGroup.MODE_ANY ||
-            (mark.activity != null && now - mark.at <= SPLASH_WINDOW_MS)
-        if (!splashActive) return
+        // mode=splash：仅在开屏窗口新鲜期（进入前台后 N 秒；页面切换不再顺延）内动作
+        if (!tracker.isFresh(pkg, runMode, entryWindowMs)) return
 
-        val lastClick = lastClickAt[pkg] ?: 0L
-        if (now - lastClick < CLICK_COOLDOWN_MS) return
-        val lastTry = lastAttemptAt[instanceKey] ?: 0L
-        if (now - lastTry < ATTEMPT_GAP_MS) return
-        if (inFlight.putIfAbsent(instanceKey, true) != null) return
-        lastAttemptAt[instanceKey] = now
+        if (!scheduler.tryEnter(pkg, instanceKey, CLICK_COOLDOWN_MS, ATTEMPT_GAP_MS)) return
 
-        val isFirstContent = event.type == TYPE_CONTENT_CHANGED && firstContentSeen.putIfAbsent(instanceKey, true) == null
-        val delayMs = if (isFirstContent) YOUNG_DELAY_MS else 0L
+        val isFirstContent = event.type == TYPE_CONTENT_CHANGED && scheduler.isFirstContent(instanceKey)
+        // 组级 delayMs 接线（v2；缺省组=150 与旧值一致）；取命中组的最小值
+        val delayMs = if (isFirstContent) {
+            profileFactory.mergedGroups(pkg)
+                .filter { GroupGating.active(it, runMode, mark.activity) }
+                .minOfOrNull { it.delayMs } ?: YOUNG_DELAY_MS
+        } else {
+            0L
+        }
 
+        Log.d(TAG, "attempt-sched pkg=$pkg key=$instanceKey delay=$delayMs type=${event.type}")
         scope.launch {
             try {
                 if (delayMs > 0) delay(delayMs)
-                attempt(pkg, instanceKey, mark)
+                attempt(pkg, instanceKey, mark, runMode)
             } finally {
-                inFlight.remove(instanceKey)
+                scheduler.leave(instanceKey)
             }
         }
     }
 
-    /** 建立新窗口实例并清理该包旧的实例态（防 map 长跑膨胀）。 */
-    private fun newInstance(pkg: String, activity: String?, now: Long): WindowMark {
-        val mark = newInstanceMark(pkg, activity, now)
-        val prefix = "$pkg#"
-        val keep = "$pkg#${mark.instance}"
-        perInstanceCount.keys.removeIf { it.startsWith(prefix) && it != keep }
-        perInstanceAttempts.keys.removeIf { it.startsWith(prefix) && it != keep }
-        lastAttemptAt.keys.removeIf { it.startsWith(prefix) && it != keep }
-        firstContentSeen.keys.removeIf { it.startsWith(prefix) && it != keep }
-        inFlight.keys.removeIf { it.startsWith(prefix) && it != keep }
-        missLogged.removeIf { it.startsWith(prefix) && it != keep }
-        return mark
-    }
-
-    private fun newInstanceMark(pkg: String, activity: String?, now: Long): WindowMark {
-        val mark = WindowMark(activity, now, instanceSeq.incrementAndGet())
-        windows[pkg] = mark
-        return mark
-    }
-
     /**
-     * 焦点窗口是否为小窗（wrap_content 弹窗/抽屉 scrim 等）：宽或高不足屏 90% 即为小窗；
-     * 取不到窗口时按全屏对待。
+     * 心跳（T-203；Q-211 参数）：入口窗口内固定节拍单次尝试，打穿"事件静默期"；
+     * 成功达上限/预算耗尽/实例更替/窗口过期即止；与事件尝试共用 inFlight 闸门互斥。
      */
-    private fun isSmallWindow(pkg: String): Boolean {
-        val b = treeProvider.focusedWindowBounds(pkg) ?: return false
-        val dm = context.resources.displayMetrics
-        return b.width < dm.widthPixels * 0.9f || b.height < dm.heightPixels * 0.9f
+    private fun launchHeartbeat(pkg: String, mark: WindowTracker.Mark, instanceKey: String) {
+        scope.launch {
+            var tick = 0
+            while (true) {
+                tick++
+                val due = heartbeat.dueAt(mark.at, tick)
+                val wait = due - System.currentTimeMillis()
+                if (wait > 0) delay(wait)
+                val current = tracker.current(pkg) ?: return@launch
+                if (current.instance != mark.instance) return@launch
+                if (!heartbeat.withinWindow(current.at, System.currentTimeMillis(), entryWindowMs)) return@launch
+                val runMode = pkgMode(pkg)
+                if (runMode == PkgMode.OFF) return@launch
+                if (!scheduler.hasBudget(instanceKey, groupMax(pkg, current, runMode), ATTEMPT_OVERHEAD)) return@launch
+                if (!scheduler.tryEnter(pkg, instanceKey, CLICK_COOLDOWN_MS, ATTEMPT_GAP_MS)) continue
+                Log.d(TAG, "heartbeat-tick pkg=$pkg key=$instanceKey tick=$tick")
+                try {
+                    attempt(pkg, instanceKey, current, runMode, maxAttempts = 1)
+                } finally {
+                    scheduler.leave(instanceKey)
+                }
+            }
+        }
     }
 
-    /**
-     * 真实 Activity 判定（与基座 RuleEngine 同口径 + 必须带包名点号）：
-     * 抽屉 DrawerLayout、弹窗 FrameLayout、裸类名 Main 等框架窗口返回 false，不重置开屏窗口。
-     */
-    private fun looksLikeActivity(cls: String?): Boolean {
-        if (cls.isNullOrBlank() || !cls.contains('.')) return false
-        if (cls.endsWith("Window") || cls.endsWith("WindowView") || cls.endsWith("PopupWindow")) return false
-        return !cls.startsWith("android.") &&
-            !cls.startsWith("androidx.") &&
-            !cls.startsWith("android.support.") &&
-            !cls.startsWith("com.android.internal.") &&
-            !cls.startsWith("com.google.android.material.") &&
-            !cls.startsWith("com.android.systemui.")
+    private fun groupMax(pkg: String, mark: WindowTracker.Mark, runMode: String): Int {
+        val groups = profileFactory.mergedGroups(pkg).filter { GroupGating.active(it, runMode, mark.activity) }
+        return groups.maxOfOrNull { it.actionMaximum } ?: if (runMode == AdSkipGroup.MODE_ANY) 2 else 1
     }
 
-    private suspend fun attempt(pkg: String, instanceKey: String, mark: WindowMark) {
-        val groups = loader.groupsFor(pkg).filter { groupActive(it, mark.activity) }
-        val maxPerInstance = groups.maxOfOrNull { it.actionMaximum } ?: if (mode == AdSkipGroup.MODE_ANY) 2 else 1
+    private suspend fun attempt(
+        pkg: String,
+        instanceKey: String,
+        mark: WindowTracker.Mark,
+        runMode: String,
+        maxAttempts: Int = MAX_ATTEMPTS,
+    ) {
+        Log.d(TAG, "attempt-enter key=$instanceKey act=${mark.activity}")
+        val maxPerInstance = groupMax(pkg, mark, runMode)
         // 已达成功上限或失败预算（成功上限+额外 2 次点击）→ 不再动作；
         // 注意：tree=null / 无候选不消耗预算（只在真实点击后计数），避免启动早期烧掉窗口期
-        if ((perInstanceCount[instanceKey] ?: 0) >= maxPerInstance) return
-        if ((perInstanceAttempts[instanceKey] ?: 0) >= maxPerInstance + ATTEMPT_OVERHEAD) return
-        repeat(MAX_ATTEMPTS) { index ->
-            val outcome = tryOnce(pkg, groups, mark)
+        if (!scheduler.hasBudget(instanceKey, maxPerInstance, ATTEMPT_OVERHEAD)) return
+        repeat(maxAttempts) { index ->
+            val outcome = tryOnce(pkg, mark, runMode)
             if (outcome != null) {
-                perInstanceAttempts.merge(instanceKey, 1, Int::plus)
+                scheduler.onOutcome(instanceKey, outcome.ok)
                 if (outcome.ok) {
-                    perInstanceCount.merge(instanceKey, 1, Int::plus)
-                    lastClickAt[pkg] = System.currentTimeMillis()
+                    scheduler.recordClick(pkg)
                     _skipCount.value = _skipCount.value + 1
                     lastSkipSummary = "${System.currentTimeMillis()} pkg=$pkg src=${outcome.source} mech=${outcome.mechanism} cls=${mark.activity?.substringAfterLast('.')}"
                 }
                 return
             }
-            if (index < MAX_ATTEMPTS - 1) delay(ATTEMPT_INTERVAL_MS)
+            if (index < maxAttempts - 1) delay(ATTEMPT_INTERVAL_MS)
         }
-        if (missLogged.add(instanceKey)) {
+        if (scheduler.onceMiss(instanceKey)) {
             val probe = treeProvider.currentTree(pkg = pkg)
             Log.d(
                 TAG,
@@ -249,59 +305,84 @@ class AdSkipFeature @Inject constructor(
 
     private data class Outcome(val ok: Boolean, val mechanism: String?, val source: String)
 
-    private suspend fun tryOnce(pkg: String, groups: List<AdSkipGroup>, mark: WindowMark): Outcome? {
-        // 保守模式（仅开屏）：仅在全屏窗口上点击；小窗（弹窗/抽屉）留给"任意弹窗"模式，
-        // 从根上避免"用户刚打开的对话框/弹窗被顺手点掉"（MT Activity 记录等）
-        if (mode != AdSkipGroup.MODE_ANY && isSmallWindow(pkg)) return null
+    private suspend fun tryOnce(pkg: String, mark: WindowTracker.Mark, runMode: String): Outcome? {
+        val instanceKey = tracker.instanceKey(pkg, mark)
+        val active = profileFactory.mergedGroups(pkg).filter { GroupGating.active(it, runMode, mark.activity) }
+
+        // 保守模式（仅开屏）：弹窗窗口默认不碰（F1）——仅显式 popupAware/zone=popup 组参与（D-205）
+        val popupReason = gate.blockReason(pkg, mark.activity, runMode)
+        val popupContext = popupReason != null
+        if (popupContext && active.none { it.popupAware == true || it.effectiveZone == AdSkipGroup.ZONE_POPUP }) {
+            if (scheduler.oncePopup("$pkg#${mark.instance}")) {
+                Log.d(TAG, "popup-skip pkg=$pkg cls=${mark.activity} ($popupReason)")
+            }
+            return null
+        }
+        if (popupContext && scheduler.oncePopup("$pkg#${mark.instance}")) {
+            Log.d(TAG, "popup-enter pkg=$pkg cls=${mark.activity} ($popupReason)")
+        }
+
         val picked = treeProvider.currentTree(pkg = pkg) ?: return null
         val tree = picked.tree
         val now = System.currentTimeMillis()
 
-        // 1) 关键词（默认 + 用户 + 规则包追加）
-        val groupKeywords = groups.flatMap { it.keywords }
-        val keywordPick = KeywordStrategy.pick(
+        val zoneGroups = active.filter { ZoneGate.allows(it, popupContext, mark.activity, mark.activityAt, now) }
+        if (zoneGroups.isEmpty()) return null
+
+        val profile = profileFactory.profile(pkg)
+        val suppressed = profile.suppressOn(mark.activity)
+            .flatMap { selector -> selectorEngine.findAll(tree.root, selector) }
+            .map { NodeIdentity.of(it.node) }
+            .toSet()
+        val ctx = ProviderContext(
+            pkg = pkg,
             root = tree.root,
-            extraKeywords = extraKeywords + groupKeywords,
             screenWidth = tree.screenWidth,
             screenHeight = tree.screenHeight,
+            groups = zoneGroups,
+            profile = profile,
+            activity = mark.activity,
+            extraKeywords = extraKeywords + profile.keywordExtra() + zoneGroups.flatMap { it.keywords },
+            suppressedIdentities = suppressed,
+            skipKeyword = popupContext || zoneGroups.any { it.suppressGeneric },
+            selectorEngine = selectorEngine,
+            scheduler = scheduler,
         )
-        if (keywordPick != null) {
-            val result = click(keywordPick.node, tree.screenWidth, tree.screenHeight)
-            record(pkg, "keyword:${keywordPick.matched}", result, now, mark.activity)
-            return Outcome(result.ok, result.mechanism, "keyword:${keywordPick.matched}")
-        }
 
-        // 2) 规则包 matches（选择器）
-        val matchCandidates = ArrayList<KeywordStrategy.Pick>(4)
-        for (group in groups) {
-            for (selector in group.matches) {
-                tree.root.let { root ->
-                    selectorEngine.findAll(root, selector).forEach { match ->
-                        matchCandidates += KeywordStrategy.Pick(match.node, selector, "match")
-                    }
+        for (provider in resolveProviders(profile.providerOrder())) {
+            val candidate = provider.provide(ctx) ?: continue
+            val identity = candidate.node?.let { NodeIdentity.of(it) }
+            if (identity != null && scheduler.identityCount(instanceKey, identity) >= IDENTITY_CLICK_LIMIT) continue
+            val result = execute(candidate, tree)
+            candidate.groupId?.let { scheduler.recordGroupAction(pkg, it) }
+            if (identity != null) {
+                scheduler.recordIdentity(instanceKey, identity)
+                if (result.ok && candidate.node != null) {
+                    scheduleVerify(pkg, mark, instanceKey, identity, candidate.node, runMode)
                 }
             }
+            record(pkg, candidate.source, result, now, mark.activity, zone = zoneOf(popupContext, runMode))
+            return Outcome(result.ok, result.mechanism, candidate.source)
         }
-        KeywordStrategy.bestOf(matchCandidates, tree.screenHeight)?.let { pick ->
-            val result = click(pick.node, tree.screenWidth, tree.screenHeight)
-            record(pkg, "match:${pick.matched}", result, now, mark.activity)
-            return Outcome(result.ok, result.mechanism, "match")
-        }
+        return null
+    }
 
-        // 3) path 兜底
-        for (group in groups) {
-            val path = group.path ?: continue
-            val node = PathResolver.resolve(tree.root, path) ?: continue
-            val result = click(node, tree.screenWidth, tree.screenHeight)
-            record(pkg, "path:${group.id}", result, now, mark.activity)
-            return Outcome(result.ok, result.mechanism, "path")
-        }
+    /** 区域准入（v2 `zone`）：弹窗上下文=仅 popupAware/zone=popup；activity 区域需页面稳定期。 */
+    private fun groupInZone(
+        group: AdSkipGroup,
+        popupContext: Boolean,
+        mark: WindowTracker.Mark,
+        now: Long,
+    ): Boolean = ZoneGate.allows(group, popupContext, mark.activity, mark.activityAt, now)
 
-        // 4) position 兜底
-        for (group in groups) {
-            val position = group.position ?: continue
+    private fun resolveProviders(order: List<String>?): List<CandidateProvider> =
+        (order ?: DEFAULT_PROVIDER_ORDER).mapNotNull { providerById[it] }
+
+    private suspend fun execute(candidate: Candidate, tree: NodeAdapter.Tree): ActionExecutor.Result {
+        val position = candidate.position
+        if (position != null) {
             val rule = RawRule(
-                id = "adskip@position:${group.id}",
+                id = "adskip@${candidate.source}",
                 action = RuleAction.POSITION,
                 position = RulePosition(
                     x = position.x,
@@ -310,11 +391,37 @@ class AdSkipFeature @Inject constructor(
                     yPercent = position.yPercent,
                 ),
             )
-            val result = executor.execute(rule, null, tree.screenWidth, tree.screenHeight)
-            record(pkg, "position:${group.id}", result, now, mark.activity)
-            return Outcome(result.ok, result.mechanism, "position")
+            return executor.execute(rule, null, tree.screenWidth, tree.screenHeight)
         }
-        return null
+        val node = candidate.node ?: return ActionExecutor.Result(ok = false, mechanism = "none")
+        return click(node, tree.screenWidth, tree.screenHeight)
+    }
+
+    /** 点击复核（T-203；复用 [ClickVerifier]）：节点仍在且未变 → 回退成功记账允许重试。 */
+    private fun scheduleVerify(
+        pkg: String,
+        mark: WindowTracker.Mark,
+        instanceKey: String,
+        identity: String,
+        node: NodeView,
+        runMode: String,
+    ) {
+        val signature = ClickVerifier.signature(node)
+        scope.launch {
+            delay(clickVerifyMs)
+            val current = tracker.current(pkg) ?: return@launch
+            if (current.instance != mark.instance) return@launch
+            val picked = treeProvider.currentTree(pkg = pkg) ?: return@launch
+            val found = NodeIdentity.find(picked.tree.root, identity) ?: return@launch
+            val stillPresent = ClickVerifier.signature(found) == signature
+            if (!stillPresent) return@launch
+            if (ClickVerifier.shouldRetry(scheduler.successCount(instanceKey), groupMax(pkg, current, runMode) + 1, nodeStillPresent = true)) {
+                scheduler.onVerifyFailed(instanceKey, identity)
+                Log.d(TAG, "verify-retry pkg=$pkg key=$instanceKey identity=$identity")
+            } else {
+                Log.d(TAG, "verify-still-present pkg=$pkg key=$instanceKey identity=$identity")
+            }
+        }
     }
 
     private suspend fun click(node: NodeView, screenWidth: Int, screenHeight: Int): ActionExecutor.Result =
@@ -325,7 +432,20 @@ class AdSkipFeature @Inject constructor(
             screenHeight,
         )
 
-    private fun record(pkg: String, source: String, result: ActionExecutor.Result, now: Long, act: String? = null) {
+    private fun zoneOf(popupContext: Boolean, runMode: String): String = when {
+        popupContext -> AdSkipGroup.ZONE_POPUP
+        runMode == AdSkipGroup.MODE_ANY -> AdSkipGroup.ZONE_ANY
+        else -> AdSkipGroup.ZONE_ENTRY
+    }
+
+    private fun record(
+        pkg: String,
+        source: String,
+        result: ActionExecutor.Result,
+        now: Long,
+        act: String? = null,
+        zone: String? = null,
+    ) {
         statsRepository.record(
             featureId = id,
             pkg = pkg,
@@ -334,18 +454,11 @@ class AdSkipFeature @Inject constructor(
             ok = result.ok,
             mechanism = result.mechanism,
             durationMs = System.currentTimeMillis() - now,
+            zone = zone,
+            provider = source.substringBefore(':'),
         )
         Log.i(TAG, "skip pkg=$pkg act=$act src=$source ok=${result.ok} mech=${result.mechanism}")
     }
-
-    private fun groupActive(group: AdSkipGroup, activity: String?): Boolean {
-        if (mode == AdSkipGroup.MODE_SPLASH && group.mode != AdSkipGroup.MODE_SPLASH) return false
-        if (activity != null && group.excludeActivityIds.any { activityMatches(it, activity) }) return false
-        return true
-    }
-
-    private fun activityMatches(pattern: String, activity: String): Boolean =
-        activity == pattern || activity.endsWith(pattern) || activity.startsWith(pattern)
 
     /** 设置面板（SPI）。 */
     @Composable
@@ -407,7 +520,7 @@ class AdSkipFeature @Inject constructor(
         const val TYPE_WINDOW_STATE_CHANGED = "WINDOW_STATE_CHANGED"
         const val TYPE_CONTENT_CHANGED = "WINDOW_CONTENT_CHANGED"
 
-        /** 开屏窗口期（进入前台/页面切换后多久内视为开屏，误操作修复由 10s 收紧为 5s）。 */
+        /** 开屏窗口期（进入前台后多久内视为开屏；误操作修复由 10s 收紧为 5s，且不再随页面切换顺延）。 */
         const val SPLASH_WINDOW_MS = 5_000L
 
         /** 同 App 连续点击最小间隔。 */
@@ -425,6 +538,16 @@ class AdSkipFeature @Inject constructor(
 
         /** 年轻窗口首屏延迟（D-107）。 */
         const val YOUNG_DELAY_MS = 150L
+
+        /** 心跳首发延迟与节拍（T-203；Q-211）。 */
+        const val HEARTBEAT_FIRST_MS = 500L
+        const val HEARTBEAT_INTERVAL_MS = 750L
+
+        /** 同实例同控件最大执行次数（D-215）。 */
+        const val IDENTITY_CLICK_LIMIT = 2
+
+        /** 默认 Provider 链序（vid 并入 keyword 档）。 */
+        val DEFAULT_PROVIDER_ORDER = listOf("keyword", "match", "path", "position")
     }
 }
 
@@ -435,4 +558,29 @@ abstract class AdSkipModule {
     @Binds
     @IntoSet
     abstract fun bindAdSkipFeature(feature: AdSkipFeature): ToolFeature
+
+    @Binds
+    abstract fun bindPackGroupsSource(loader: AdSkipPackLoader): PackGroupsSource
+
+    /** 特定应用识别器集合（无绑定时空集，工厂回落通用）。 */
+    @Multibinds
+    abstract fun bindAppAdProfiles(): Set<AppAdProfile>
+
+    @Binds
+    @IntoSet
+    abstract fun bindPsyoneProfile(profile: PsyoneBrainmusicProfile): AppAdProfile
 }
+
+/**
+ * 真实 Activity 判定（R-209 归一：唯一实现在 [ClassNames]）：
+ * 抽屉 DrawerLayout、弹窗 FrameLayout、裸类名 Main 等框架窗口返回 false。
+ */
+internal fun looksLikeActivity(cls: String?): Boolean = ClassNames.isActivityLike(cls)
+
+/** 两轴比例接近且都明显小于屏幕 → 视为应用开关动画中的等比缩放窗口（按全屏对待）。 */
+internal fun isUniformlyScaled(widthRatio: Float, heightRatio: Float): Boolean =
+    com.wavexzore.toolbox.feature.adskip.infra.isUniformlyScaled(widthRatio, heightRatio)
+
+/** 弹窗式窗口类别：框架 Dialog / PopupWindow（WSC 事件类别可能混入视图类，故只认这两种）。 */
+internal fun isPopupWindowClass(cls: String?): Boolean =
+    com.wavexzore.toolbox.feature.adskip.infra.isPopupWindowClassOf(cls)

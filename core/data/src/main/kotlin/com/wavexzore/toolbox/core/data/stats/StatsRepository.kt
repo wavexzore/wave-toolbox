@@ -33,6 +33,8 @@ class StatsRepository @Inject constructor(
         ok: Boolean,
         mechanism: String? = null,
         durationMs: Long = 0,
+        zone: String? = null,
+        provider: String? = null,
     ) {
         val now = System.currentTimeMillis()
         scope.launch {
@@ -47,6 +49,8 @@ class StatsRepository @Inject constructor(
                         ok = ok,
                         mechanism = mechanism,
                         durationMs = durationMs,
+                        zone = zone,
+                        provider = provider,
                     ),
                 )
                 if (inserts.incrementAndGet() % PURGE_EVERY_INSERTS == 0L) {

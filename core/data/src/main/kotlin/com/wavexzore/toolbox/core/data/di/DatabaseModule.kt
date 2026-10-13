@@ -18,6 +18,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): ToolboxDatabase =
         Room.databaseBuilder(context, ToolboxDatabase::class.java, ToolboxDatabase.NAME)
-            .addMigrations(ToolboxDatabase.MIGRATION_1_2)
+            .addMigrations(ToolboxDatabase.MIGRATION_1_2, ToolboxDatabase.MIGRATION_2_3)
+            .fallbackToDestructiveMigrationOnDowngrade()
             .build()
 }

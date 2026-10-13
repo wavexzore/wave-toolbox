@@ -1,8 +1,10 @@
+// 微信示例规则（T-006 演示；T-205/Q-209：整包迁移至 adskip 规则包 com.tencent.mm.json5 → 本文件停用）
+// 迁移映射：rules[mm@LauncherUI.splash] → adskip 包 groups[com.tencent.mm#splash-entry]（含 activityIds 约束）
 {
   id: "com.tencent.mm",
   name: "微信示例规则",
   order: 50,
-  enabled: true,
+  enabled: false,
   schemaVersion: 1,
   apps: [{ id: "com.tencent.mm" }],
   rules: [

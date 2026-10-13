@@ -1,5 +1,6 @@
 package com.wavexzore.toolbox.core.accessibility.action
 
+import com.wavexzore.toolbox.core.selector.NodeFilters
 import com.wavexzore.toolbox.core.selector.NodeView
 import com.wavexzore.toolbox.core.selector.Rect
 
@@ -25,7 +26,7 @@ object ClickResolver {
         data object NoTarget : Resolution
     }
 
-    const val WIDE_RATIO = 0.6f
+    const val WIDE_RATIO = NodeFilters.WIDE_RATIO
 
     /**
      * @param target 命中节点
@@ -42,23 +43,14 @@ object ClickResolver {
         return if (center != null) Resolution.CenterTap(center.first, center.second) else Resolution.NoTarget
     }
 
-    /** 过滤类判定（可点击但不宜作为 performAction 直接目标）。 */
-    fun isFilteredTarget(node: NodeView, screenWidth: Int): Boolean {
-        if (node.isEditable) return true
-        if (node.isScrollable) return true
-        if (isCheckableClass(node.className)) return true
-        val wide = screenWidth > 0 && node.bounds.width >= (screenWidth * WIDE_RATIO).toInt()
-        if (wide && node.text.isNullOrBlank() && node.contentDescription.isNullOrBlank()) return true
-        return false
-    }
+    /** 过滤类判定（可点击但不宜作为 performAction 直接目标；R-209 起由 [NodeFilters] 唯一实现）。 */
+    fun isFilteredTarget(node: NodeView, screenWidth: Int): Boolean =
+        NodeFilters.isFilteredPerformTarget(node, screenWidth)
 
-    fun isCheckableClass(className: String?): Boolean =
-        className?.substringAfterLast('.') in CHECKABLE_CLASSES
+    fun isCheckableClass(className: String?): Boolean = NodeFilters.isCheckableClass(className)
 
     fun centerOf(rect: Rect): Pair<Int, Int>? {
         if (rect.width <= 0 || rect.height <= 0) return null
         return rect.left + rect.width / 2 to rect.top + rect.height / 2
     }
-
-    private val CHECKABLE_CLASSES = setOf("CheckBox", "RadioButton", "Switch", "ToggleButton", "CompoundButton")
 }

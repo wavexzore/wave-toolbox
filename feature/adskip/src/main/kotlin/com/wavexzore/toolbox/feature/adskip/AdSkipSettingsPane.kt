@@ -55,6 +55,7 @@ fun AdSkipSettingsPane(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val mode by config.mode.collectAsStateWithLifecycle(initialValue = AdSkipConfig.DEFAULT_MODE)
+    val entryWindowMs by config.entryWindowMs.collectAsStateWithLifecycle(initialValue = AdSkipConfig.DEFAULT_ENTRY_WINDOW_MS)
     val extraKeywords by config.extraKeywords.collectAsStateWithLifecycle(initialValue = emptySet())
     val packState by loaderState.collectAsStateWithLifecycle()
 
@@ -89,13 +90,39 @@ fun AdSkipSettingsPane(
                 text = if (mode == AdSkipGroup.MODE_ANY) {
                     "任何界面出现匹配的弹窗、提示条也会点击；覆盖更全，节奏更激进。"
                 } else {
-                    "只在 App 启动后 5 秒内、全屏窗口上点击；日常弹窗与抽屉一律不碰，误点最少。"
+                    "只在 App 启动后 ${entryWindowMs / 1000} 秒内、全屏窗口上点击；日常弹窗与抽屉一律不碰，误点最少。"
                 },
                 fontSize = 12.5.sp,
                 color = Wave.Ink2,
                 lineHeight = 19.sp,
                 modifier = Modifier.padding(top = 11.dp),
             )
+        }
+
+        WaveSectionLabel("入口窗口")
+        WaveCard {
+            val presets = listOf(3_000L, 5_000L, 8_000L, 12_000L)
+            WaveSeg(
+                items = presets.map { "${it / 1000} 秒" },
+                selected = presets.indexOfFirst { it >= entryWindowMs }.let { if (it < 0) presets.lastIndex else it },
+                onSelect = { index -> scope.launch { config.setEntryWindowMs(presets[index]) } },
+            )
+            Text(
+                "进入 App 后视为开屏的时长：越短误点越少，越长覆盖越全（默认 5 秒）。",
+                fontSize = 12.5.sp,
+                color = Wave.Ink2,
+                lineHeight = 19.sp,
+                modifier = Modifier.padding(top = 11.dp),
+            )
+            feature.quirks.keepAliveHint?.let { hint ->
+                Text(
+                    hint,
+                    fontSize = 12.sp,
+                    color = Wave.Ink3,
+                    lineHeight = 18.sp,
+                    modifier = Modifier.padding(top = 9.dp),
+                )
+            }
         }
 
         WaveSectionLabel("追加关键词")

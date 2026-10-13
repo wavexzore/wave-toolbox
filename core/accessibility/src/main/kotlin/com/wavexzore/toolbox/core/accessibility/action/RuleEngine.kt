@@ -8,6 +8,7 @@ import com.wavexzore.toolbox.core.accessibility.pipeline.A11yEvent
 import com.wavexzore.toolbox.core.accessibility.pipeline.A11yEventType
 import com.wavexzore.toolbox.core.accessibility.pipeline.EventPipeline
 import com.wavexzore.toolbox.core.common.dispatchers.AppDispatchers
+import com.wavexzore.toolbox.core.common.text.ClassNames
 import com.wavexzore.toolbox.core.data.rules.RuleRepository
 import com.wavexzore.toolbox.core.data.settings.SettingsRepository
 import com.wavexzore.toolbox.core.data.stats.StatsRepository
@@ -233,17 +234,8 @@ class RuleEngine @Inject constructor(
         }
     }
 
-    /** 真实 Activity 类名（非 `android.*`/`androidx.*` 等框架组件类）。 */
-    private fun isActivityLike(cls: String?): Boolean {
-        if (cls.isNullOrBlank()) return false
-        if (cls.endsWith("Window") || cls.endsWith("WindowView") || cls.endsWith("PopupWindow")) return false
-        return !cls.startsWith("android.") &&
-            !cls.startsWith("androidx.") &&
-            !cls.startsWith("android.support.") &&
-            !cls.startsWith("com.android.internal.") &&
-            !cls.startsWith("com.google.android.material.") &&
-            !cls.startsWith("com.android.systemui.")
-    }
+    /** 真实 Activity 类名（R-209 归一：唯一实现于 [ClassNames]）。 */
+    private fun isActivityLike(cls: String?): Boolean = ClassNames.isActivityLike(cls)
 
     private fun activityFor(pkg: String): String? =
         ledger.activity?.takeIf { ledger.packageName == pkg }

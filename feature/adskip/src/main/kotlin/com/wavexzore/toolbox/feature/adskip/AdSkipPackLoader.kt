@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 class AdSkipPackLoader @Inject constructor(
     @ApplicationContext private val context: Context,
     dispatchers: AppDispatchers,
-) {
+) : PackGroupsSource {
 
     data class Pack(
         val pkg: String,
@@ -63,7 +63,7 @@ class AdSkipPackLoader @Inject constructor(
         }
     }
 
-    fun groupsFor(pkg: String): List<AdSkipGroup> =
+    override fun groupsFor(pkg: String): List<AdSkipGroup> =
         _state.value.packs[pkg]?.groups?.filter { it.enabled }?.sortedBy { it.order } ?: emptyList()
 
     fun userDir(): File = File(context.filesDir, "adskip").apply { mkdirs() }

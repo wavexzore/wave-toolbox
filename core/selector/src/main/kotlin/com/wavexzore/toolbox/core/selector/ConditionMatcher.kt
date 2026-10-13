@@ -19,7 +19,7 @@ object ConditionMatcher {
         }
     }
 
-    /** vid 采用"全等或资源后缀"语义（04 §5.2：仅后缀匹配语义）。 */
+    /** vid 采用"全等或资源后缀"语义（04 §5.2：仅后缀匹配语义；R-209 起由 [ResourceMatcher] 唯一实现）。 */
     private fun equalsValue(attr: SelAttr, actual: String, value: String): Boolean =
-        actual == value || (attr == SelAttr.VID && actual.substringAfterLast('/') == value)
+        if (attr == SelAttr.VID) ResourceMatcher.vidEquals(actual, value) else actual == value
 }

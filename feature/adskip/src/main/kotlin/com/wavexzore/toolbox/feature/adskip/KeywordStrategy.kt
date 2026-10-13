@@ -1,7 +1,9 @@
 package com.wavexzore.toolbox.feature.adskip
 
 import com.wavexzore.toolbox.core.accessibility.action.AndroidNodeView
+import com.wavexzore.toolbox.core.selector.NodeFilters
 import com.wavexzore.toolbox.core.selector.NodeView
+import com.wavexzore.toolbox.core.selector.ResourceMatcher
 
 /**
  * 关键词跳过策略（T-002；李跳跳 `LttService.e`/`c` 语义移植，纯 JVM 可测）。
@@ -18,7 +20,6 @@ object KeywordStrategy {
 
     const val MAX_TEXT_LEN = 6
     private const val TOP_AREA_RATIO = 0.25f
-    private const val WIDE_CONTAINER_RATIO = 0.6f
     private const val MAX_ANCESTOR_CHECK = 6
 
     /** 误操作修复（2026-10-14）：易误点关键词，需"顶部 35% 或 自/祖先可点击"约束。 */
@@ -84,8 +85,7 @@ object KeywordStrategy {
             }
         }
         if (matchedPick == null) {
-            val vid = node.viewId?.lowercase()
-            val vidKeyword = vid?.let { v -> DEFAULT_VID_KEYWORDS.firstOrNull { v.contains(it) } }
+            val vidKeyword = DEFAULT_VID_KEYWORDS.firstOrNull { ResourceMatcher.vidContains(node.viewId, it) }
             if (vidKeyword != null && passesFilters(node, screenWidth, screenHeight)) {
                 matchedPick = Pick(node, "vid:$vidKeyword", source = "vid")
             }
@@ -94,18 +94,9 @@ object KeywordStrategy {
         node.children.forEach { collect(it, keywords, excludes, screenWidth, screenHeight, out) }
     }
 
-    /** D-104 过滤链（任一不过即弃）。 */
-    private fun passesFilters(node: NodeView, screenWidth: Int, screenHeight: Int): Boolean {
-        if (!node.isVisible) return false
-        if (node.isEditable) return false
-        if (node.isScrollable) return false
-        if (node.bounds.width <= 0 || node.bounds.height <= 0) return false
-        // 宽 > 60% 屏且无文本 → 容器（顶部整条），不可直接点
-        val wide = screenWidth > 0 && node.bounds.width > screenWidth * WIDE_CONTAINER_RATIO
-        if (wide && node.text.isNullOrBlank()) return false
-        // 不可点击也保留：点击可点击祖先/坐标兜底由执行器完成（李跳跳同序）
-        return true
-    }
+    /** D-104 过滤链（任一不过即弃；R-209 起由 [NodeFilters] 唯一实现）。 */
+    private fun passesFilters(node: NodeView, screenWidth: Int, screenHeight: Int): Boolean =
+        NodeFilters.passesKeywordCandidate(node, screenWidth)
 
     /** 误操作修复：易误点关键词的空间/可点击性约束。 */
     private fun passesConstraint(node: NodeView, keyword: String, screenWidth: Int, screenHeight: Int): Boolean {

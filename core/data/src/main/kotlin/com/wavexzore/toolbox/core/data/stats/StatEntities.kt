@@ -24,6 +24,10 @@ data class StatRecordEntity(
     val ok: Boolean,
     val mechanism: String?,
     @ColumnInfo(name = "duration_ms") val durationMs: Long,
+    /** 区域（T-207：entry/activity/popup/any）。 */
+    val zone: String? = null,
+    /** 命中来源（T-207：keyword/vid/match/path/position）。 */
+    val provider: String? = null,
 )
 
 data class StatsTotals(
