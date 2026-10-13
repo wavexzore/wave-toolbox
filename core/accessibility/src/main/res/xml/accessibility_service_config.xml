@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  无障碍服务配置（初值；连接后由 onServiceConnected 幂等覆写关键字段）。
+  eventTypes/flags 对齐 gkd 事件合流所需最小集；notificationTimeout=100 防 CONTENT_CHANGED 洪泛（D-006）。
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeWindowsChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
+    android:canPerformGestures="true"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/accessibility_service_description"
+    android:isAccessibilityTool="true"
+    android:notificationTimeout="100"
+    android:settingsActivity="com.wavexzore.toolbox.MainActivity" />

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+
+        <!--
+          D-011：服务组件类名固定伪装 com.google.android.accessibility.selecttospeak.SelectToSpeakService。
+          类必须真移包（android:name 与类全限定名一致）；微信按此白名单发布节点树（空树门禁，ledger D-014 实证）。
+          自本任务起禁止改名/移包，变更需复跑 C-005。
+        -->
+        <service
+            android:name="com.google.android.accessibility.selecttospeak.SelectToSpeakService"
+            android:exported="true"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+
+        </service>
+
+    </application>
+
+</manifest>
