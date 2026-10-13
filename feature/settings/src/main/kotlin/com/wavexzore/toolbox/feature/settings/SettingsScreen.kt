@@ -1,5 +1,6 @@
 package com.wavexzore.toolbox.feature.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,6 +35,7 @@ import kotlin.math.roundToInt
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onOpenEventLog: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -90,7 +92,7 @@ fun SettingsScreen(
 
             SectionTitle("诊断")
 
-            PlainRow("事件日志", "待接入（T-004）")
+            PlainRow("事件日志", "查看（实时）", onClick = onOpenEventLog)
             HorizontalDivider()
             PlainRow("应用白名单", if (uiState.allowPackages.isEmpty()) "全部应用" else "${uiState.allowPackages.size} 个应用")
         }
@@ -138,10 +140,11 @@ private fun SwitchRow(
 }
 
 @Composable
-private fun PlainRow(title: String, trailing: String) {
+private fun PlainRow(title: String, trailing: String, onClick: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
