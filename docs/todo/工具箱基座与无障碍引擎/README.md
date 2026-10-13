@@ -17,16 +17,16 @@
 schema_version: "1.0"
 feature_id: "toolbox-core"
 feature_name: "工具箱基座与无障碍引擎"
-status: "in_progress"
-current_task: "T-012"
-last_completed_task: "T-011"
-next_action: "执行 T-012：C-999 质量门 + C-005 复跑 + 文档收口（02/README/03）"
+status: "done"
+current_task: "（完成）"
+last_completed_task: "T-012"
+next_action: "基座完成。后续按特性目录推进：`docs/todo/开屏广告自动跳过`、`docs/todo/微信僵尸好友检测与清理`（SPI 注册即生效）"
 verification_status: "pass"
 research_status: "pass"
 call_chain_status: "pass"
 code_calibration_status: "pass"
-last_verification_command: "C-012 PASS（统计可见+zip 可解压+分享）；./gradlew test lint :app:assembleDebug PASS（2026-10-13）"
-last_updated: "2026-10-13T21:32:00+08:00"
+last_verification_command: "C-999 PASS（clean 537 任务、166 用例 0 失败）；C-005 复跑 PASS（407B↔58022B + 事件直达）（2026-10-13）"
+last_updated: "2026-10-13T21:42:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
   - "01-实施计划.md#6-LLM任务队列"
@@ -137,7 +137,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | T-009 | 保活：overlay+通知+开机自启+OEM 引导 | done | T-003 | C-010 PASS（重启恢复+引导全分支） | 重启恢复 |
 | T-010 | Feature SPI + 首页/日志/快照检查器 UI | done | T-008,T-009 | C-011 PASS（注册/开关/分发/快照/动作流） | 空壳特性接入 |
 | T-011 | 统计与诊断导出 | done | T-010 | C-012 PASS（统计页真实数据 + zip 可解压） | 导出可读 |
-| T-012 | 质量门与最终验证 | todo | T-011 | none | `VERDICT` |
+| T-012 | 质量门与最终验证 | done | T-011 | C-999 PASS + C-005 复跑 PASS（407B↔58KB + 事件直达） | `VERDICT` |
 
 状态值只允许：`todo`、`in_progress`、`blocked`、`done`、`skipped`。
 
@@ -211,7 +211,7 @@ interface ToolFeature {
 | AC-005 | 编排器任务可等待条件、超时、取消 | T-008 | `./gradlew :core:automation:test`（C-003 PASS 19/19，假环境全分支） | pass |
 | AC-006 | 重启后服务自动恢复、通知常驻 | T-009 | C-010：BOOT 链恢复 + 通知常驻/操作 | pass |
 | AC-007 | 空壳特性可注册、可开关、有设置页 | T-010 | C-011：两空壳特性首页可见/开关生效/设置页可进 | pass |
-| AC-008 | 回归：所有质量门命令 | T-012 | `./gradlew test lint :app:assembleDebug` | todo |
+| AC-008 | 回归：所有质量门命令 | T-012 | C-999：clean 全量 0 失败（166 用例 + lint + assembleDebug） | pass |
 | AC-009 | 微信空树门禁冒烟：微信主界面节点树非空（无 407B 空树特征） | T-003,T-012 | `C-005` | pass（T-012 复跑） |
 
 ---
@@ -231,14 +231,14 @@ interface ToolFeature {
 | C-002 | `./gradlew :core:selector:test` | T-005 后 | PASS |
 | C-003 | `./gradlew :core:automation:test` | T-008 后 | PASS（19/19） |
 | C-004 | `adb install -r app/build/outputs/apk/debug/app-debug.apk` | T-002 后 | PASS |
-| C-005 | 微信空树门禁冒烟：`adb shell uiautomator dump`（微信主界面，根包校验）→ 文件 ≥50KB 且根 cls 非 null | T-003 后、T-012 | PASS |
+| C-005 | 微信空树门禁冒烟：`adb shell uiautomator dump`（微信主界面，根包校验）→ 文件 ≥50KB 且根 cls 非 null | T-003 后、T-012 | PASS（T-012 复跑：407B↔58022B + 事件直达） |
 | C-007 | `./gradlew :core:rules:test` | T-006 后 | PASS（39/39） |
 | C-008 | `./gradlew :core:accessibility:testDebugUnitTest` | T-007 后 | PASS（55/55） |
 | C-009 | 手动清单：设置/Chrome/微信各触发一次规则点击 | T-007 后 | PASS |
 | C-010 | 手动：重启恢复 + 引导页全分支 + 通知常驻/操作 | T-009 后 | PASS |
 | C-011 | 手动：空壳特性首页/开关/分发 + 快照导出 + 动作流 | T-010 后 | PASS |
 | C-012 | 手动：动作统计可见 + 诊断 zip 可解压 + 分享 | T-011 后 | PASS |
-| C-999 | `./gradlew test lint :app:assembleDebug` | 全部完成后 | PASS |
+| C-999 | `./gradlew clean test lint :app:assembleDebug` | 全部完成后 | PASS（537 任务、166 用例 0 失败） |
 
 ---
 
