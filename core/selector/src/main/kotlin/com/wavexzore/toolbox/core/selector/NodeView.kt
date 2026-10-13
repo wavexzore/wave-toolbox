@@ -21,6 +21,8 @@ interface NodeView {
     val isVisible: Boolean
     val isEditable: Boolean
     val isScrollable: Boolean
+    /** 勾选态（默认 false；数据源未提供时保持默认）。 */
+    val isChecked: Boolean get() = false
     val depth: Int
     val drawingOrder: Int?
     val children: List<NodeView>

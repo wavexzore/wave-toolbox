@@ -11,6 +11,7 @@ import com.wavexzore.toolbox.core.accessibility.pipeline.EventPipeline
 import com.wavexzore.toolbox.core.automation.TaskEnvironment
 import com.wavexzore.toolbox.core.rules.model.RawRule
 import com.wavexzore.toolbox.core.rules.model.RuleAction
+import com.wavexzore.toolbox.core.rules.model.RulePosition
 import com.wavexzore.toolbox.core.selector.NodeView
 import dagger.Binds
 import dagger.Module
@@ -72,6 +73,31 @@ class AndroidTaskEnvironment @Inject constructor(
         return result.ok
     }
 
+    override suspend fun tapAt(x: Int, y: Int): Boolean {
+        val picked = treeProvider.currentTree() ?: return false
+        val result = executor.execute(
+            RawRule(
+                id = ENV_RULE_PREFIX + "tap",
+                action = RuleAction.POSITION,
+                position = RulePosition(x = x, y = y),
+            ),
+            null,
+            picked.tree.screenWidth,
+            picked.tree.screenHeight,
+        )
+        return result.ok
+    }
+
+    override suspend fun setText(node: NodeView, text: String): Boolean {
+        val source = (node as? AndroidNodeView)?.source ?: return false
+        val args = android.os.Bundle().apply {
+            putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        }
+        return runCatching {
+            source.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        }.getOrDefault(false)
+    }
+
     override suspend fun back(): Boolean {
         val picked = treeProvider.currentTree()
         val result = executor.execute(
@@ -96,6 +122,33 @@ class AndroidTaskEnvironment @Inject constructor(
             picked.tree.screenHeight,
         )
         return result.ok
+    }
+
+    override suspend fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long): Boolean {
+        val service = com.google.android.accessibility.selecttospeak.SelectToSpeakService.instance ?: return false
+        val path = android.graphics.Path().apply {
+            moveTo(x1.toFloat(), y1.toFloat())
+            lineTo(x2.toFloat(), y2.toFloat())
+        }
+        val gesture = android.accessibilityservice.GestureDescription.Builder()
+            .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, durationMs.coerceAtLeast(60)))
+            .build()
+        val latch = kotlinx.coroutines.CompletableDeferred<Boolean>()
+        val dispatched = service.dispatchGesture(
+            gesture,
+            object : android.accessibilityservice.AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(description: android.accessibilityservice.GestureDescription?) {
+                    latch.complete(true)
+                }
+
+                override fun onCancelled(description: android.accessibilityservice.GestureDescription?) {
+                    latch.complete(false)
+                }
+            },
+            null,
+        )
+        if (!dispatched) return false
+        return withTimeoutOrNull(durationMs + 900) { latch.await() } ?: false
     }
 
     override suspend fun openApp(pkg: String) {
