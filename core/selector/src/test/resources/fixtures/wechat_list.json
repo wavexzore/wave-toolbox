@@ -1,0 +1,40 @@
+{
+  "class": "android.widget.ListView",
+  "vid": "com.tencent.mm:id/list",
+  "bounds": [0, 300, 1080, 2340],
+  "scrollable": true,
+  "children": [
+    {
+      "class": "android.widget.LinearLayout",
+      "bounds": [0, 300, 1080, 500],
+      "children": [
+        {
+          "vid": "com.tencent.mm:id/avatar",
+          "class": "android.widget.ImageView",
+          "bounds": [40, 320, 160, 440]
+        },
+        {
+          "text": "周涵",
+          "class": "android.widget.TextView",
+          "bounds": [200, 320, 500, 380]
+        }
+      ]
+    },
+    {
+      "class": "android.widget.LinearLayout",
+      "bounds": [0, 500, 1080, 700],
+      "children": [
+        {
+          "vid": "com.tencent.mm:id/avatar",
+          "class": "android.widget.ImageView",
+          "bounds": [40, 520, 160, 640]
+        },
+        {
+          "text": "小蜜蜂🐝",
+          "class": "android.widget.TextView",
+          "bounds": [200, 520, 500, 580]
+        }
+      ]
+    }
+  ]
+}
