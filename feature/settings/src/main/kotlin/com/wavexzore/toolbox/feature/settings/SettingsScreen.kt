@@ -36,6 +36,7 @@ import kotlin.math.roundToInt
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenEventLog: () -> Unit,
+    onOpenSetupGuide: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -88,6 +89,11 @@ fun SettingsScreen(
                 )
             }
 
+            HorizontalDivider()
+
+            SectionTitle("引导与保活")
+
+            PlainRow("首次引导", "无障碍/电池优化/自启检查", onClick = onOpenSetupGuide)
             HorizontalDivider()
 
             SectionTitle("诊断")

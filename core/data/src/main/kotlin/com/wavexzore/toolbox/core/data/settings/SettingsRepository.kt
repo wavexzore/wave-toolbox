@@ -45,6 +45,10 @@ class SettingsRepository @Inject constructor(
     val clickVerifyMs: Flow<Int> = context.settingsDataStore.data
         .map { prefs -> (prefs[KEY_CLICK_VERIFY_MS] ?: DEFAULT_CLICK_VERIFY_MS).coerceIn(MIN_CLICK_VERIFY_MS, MAX_CLICK_VERIFY_MS) }
 
+    /** 首启引导是否已完成（`setup.completed`，默认 false）。 */
+    val setupCompleted: Flow<Boolean> = context.settingsDataStore.data
+        .map { prefs -> prefs[KEY_SETUP_COMPLETED] ?: false }
+
     suspend fun setEngineEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { prefs -> prefs[KEY_ENGINE_ENABLED] = enabled }
     }
@@ -57,6 +61,10 @@ class SettingsRepository @Inject constructor(
         context.settingsDataStore.edit { prefs ->
             prefs[KEY_CLICK_VERIFY_MS] = ms.coerceIn(MIN_CLICK_VERIFY_MS, MAX_CLICK_VERIFY_MS)
         }
+    }
+
+    suspend fun setSetupCompleted(completed: Boolean) {
+        context.settingsDataStore.edit { prefs -> prefs[KEY_SETUP_COMPLETED] = completed }
     }
 
     suspend fun setContentThrottleMs(ms: Int) {
@@ -75,6 +83,7 @@ class SettingsRepository @Inject constructor(
         val KEY_ALLOW_PACKAGES = stringSetPreferencesKey("engine.allowPackages")
         val KEY_CLICK_FALLBACK = booleanPreferencesKey("engine.clickFallback")
         val KEY_CLICK_VERIFY_MS = intPreferencesKey("engine.clickVerifyMs")
+        val KEY_SETUP_COMPLETED = booleanPreferencesKey("setup.completed")
 
         const val DEFAULT_ENGINE_ENABLED = true
         const val DEFAULT_CONTENT_THROTTLE_MS = 100

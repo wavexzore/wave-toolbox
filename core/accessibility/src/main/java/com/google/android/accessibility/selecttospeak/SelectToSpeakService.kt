@@ -5,6 +5,8 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import com.wavexzore.toolbox.core.accessibility.action.RuleEngine
+import com.wavexzore.toolbox.core.accessibility.keepalive.KeepAliveService
+import com.wavexzore.toolbox.core.accessibility.keepalive.OverlayKeepAlive
 import com.wavexzore.toolbox.core.accessibility.pipeline.AnrGuard
 import com.wavexzore.toolbox.core.accessibility.pipeline.EventPipeline
 import com.wavexzore.toolbox.core.accessibility.pipeline.toA11yEvent
@@ -44,6 +46,9 @@ class SelectToSpeakService : AccessibilityService() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /** T-009：1×1 overlay 保活（第二重，与 FGS 独立）。 */
+    private val overlayKeepAlive by lazy { OverlayKeepAlive(this) }
+
     /** 引擎总开关镜像（来自 DataStore；T-004 起决定事件是否进入管线）。 */
     @Volatile
     var engineEnabled: Boolean = SettingsRepository.DEFAULT_ENGINE_ENABLED
@@ -64,6 +69,10 @@ class SelectToSpeakService : AccessibilityService() {
         }
         // T-007：规则引擎（事件 → 匹配 → 动作）
         ruleEngine.start()
+        // T-009：保活（overlay + 前台常驻通知）
+        overlayKeepAlive.attach()
+        runCatching { KeepAliveService.start(this) }
+            .onFailure { Log.w(TAG, "keepalive start deferred: ${it::class.simpleName}") }
         Log.i(
             TAG,
             "onServiceConnected: info=[${describeServiceInfo()}], engineEnabled=$engineEnabled",
@@ -108,6 +117,7 @@ class SelectToSpeakService : AccessibilityService() {
         isConnected = false
         instance = null
         ruleEngine.stop()
+        overlayKeepAlive.detach()
         serviceScope.cancel()
         Log.i(TAG, "onDestroy: totalEvents=${eventCount.get()}")
         super.onDestroy()

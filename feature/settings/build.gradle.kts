@@ -38,6 +38,7 @@ dependencies {
     implementation(project(":core:design"))
 
     implementation(platform(libs.compose.bom))
+    implementation(libs.activity.compose)
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.core)

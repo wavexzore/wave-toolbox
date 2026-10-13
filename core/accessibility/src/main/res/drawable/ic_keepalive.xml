@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 常驻通知小图标（白色剪影，闪电 W 语义） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M13,2 L4.5,13.2 L10.8,13.2 L9.8,22 L18.5,10.6 L12.2,10.6 Z" />
+</vector>
