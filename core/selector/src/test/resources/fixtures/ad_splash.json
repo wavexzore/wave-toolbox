@@ -1,0 +1,35 @@
+{
+  "class": "android.widget.FrameLayout",
+  "bounds": [0, 0, 1080, 2340],
+  "children": [
+    {
+      "class": "android.widget.FrameLayout",
+      "vid": "com.demo.app:id/skip_container",
+      "bounds": [864, 120, 1056, 200],
+      "children": [
+        {
+          "text": "跳过",
+          "class": "android.widget.TextView",
+          "clickable": true,
+          "bounds": [880, 130, 1040, 190]
+        }
+      ]
+    },
+    {
+      "class": "android.widget.ImageView",
+      "text": "广告",
+      "bounds": [0, 400, 1080, 1600]
+    },
+    {
+      "class": "android.widget.FrameLayout",
+      "bounds": [0, 2000, 1080, 2340],
+      "children": [
+        {
+          "text": "跳过",
+          "class": "android.widget.TextView",
+          "bounds": [40, 2050, 200, 2100]
+        }
+      ]
+    }
+  ]
+}

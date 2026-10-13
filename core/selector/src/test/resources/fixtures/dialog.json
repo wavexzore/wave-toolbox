@@ -1,0 +1,29 @@
+{
+  "class": "android.app.Dialog",
+  "bounds": [100, 800, 980, 1600],
+  "children": [
+    {
+      "text": "确认删除该好友?",
+      "class": "android.widget.TextView",
+      "bounds": [140, 850, 940, 1050]
+    },
+    {
+      "class": "android.widget.LinearLayout",
+      "bounds": [140, 1400, 940, 1560],
+      "children": [
+        {
+          "text": "取消",
+          "class": "android.widget.Button",
+          "clickable": true,
+          "bounds": [500, 1420, 700, 1540]
+        },
+        {
+          "text": "确定",
+          "class": "android.widget.Button",
+          "clickable": true,
+          "bounds": [720, 1420, 920, 1540]
+        }
+      ]
+    }
+  ]
+}
