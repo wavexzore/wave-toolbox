@@ -3,7 +3,7 @@
   id: "com.example.demo",
   name: "示例应用广告跳过",
   order: 10,
-  enabled: true,
+  enabled: false, // 2026-10-14 误操作修复：演示规则默认关闭
   schemaVersion: 1,
   apps: [
     { id: "com.example.demo" },

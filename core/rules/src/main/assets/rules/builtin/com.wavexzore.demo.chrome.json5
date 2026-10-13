@@ -3,7 +3,7 @@
   id: "toolbox.demo.chrome",
   name: "演示：浏览器（展开近期标签）",
   order: 90,
-  enabled: true,
+  enabled: false, // 2026-10-14 误操作修复：演示规则默认关闭
   schemaVersion: 1,
   apps: [{ id: "com.android.chrome" }],
   rules: [

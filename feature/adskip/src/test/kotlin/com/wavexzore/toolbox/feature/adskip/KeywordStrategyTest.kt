@@ -176,4 +176,90 @@ class KeywordStrategyTest {
         assertNotNull(pick)
         assertEquals(150, pick.node.bounds.top)
     }
+
+    // ---- 误操作修复（2026-10-14）：易误点关键词的约束 ----
+
+    @Test
+    fun ambiguousCloseMidScreenUnclickableRejected() {
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1000,2600], "children":[
+              { "text":"关闭", "class":"TextView", "bounds":[100,1300,300,1360] }
+            ]}
+            """.trimIndent(),
+        )
+        assertNull(KeywordStrategy.pick(root, screenWidth = 1000, screenHeight = 2600))
+    }
+
+    @Test
+    fun ambiguousCloseMidScreenClickableAccepted() {
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1000,2600], "children":[
+              { "text":"关闭", "class":"TextView", "clickable":true, "bounds":[100,1300,300,1360] }
+            ]}
+            """.trimIndent(),
+        )
+        assertNotNull(KeywordStrategy.pick(root, screenWidth = 1000, screenHeight = 2600))
+    }
+
+    @Test
+    fun ambiguousCloseTopAreaUnclickableAccepted() {
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1000,2600], "children":[
+              { "text":"关闭", "class":"TextView", "bounds":[100,200,300,260] }
+            ]}
+            """.trimIndent(),
+        )
+        assertNotNull(KeywordStrategy.pick(root, screenWidth = 1000, screenHeight = 2600))
+    }
+
+    @Test
+    fun cornerXMidScreenUnclickableRejected() {
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1000,2600], "children":[
+              { "text":"×", "class":"TextView", "bounds":[300,1300,360,1360] }
+            ]}
+            """.trimIndent(),
+        )
+        assertNull(KeywordStrategy.pick(root, screenWidth = 1000, screenHeight = 2600))
+    }
+
+    @Test
+    fun cornerXTopRightUnclickableAccepted() {
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1000,2600], "children":[
+              { "text":"×", "class":"TextView", "bounds":[900,200,960,260] }
+            ]}
+            """.trimIndent(),
+        )
+        assertNotNull(KeywordStrategy.pick(root, screenWidth = 1000, screenHeight = 2600))
+    }
+
+    @Test
+    fun cornerXTopLeftUnclickableRejected() {
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1000,2600], "children":[
+              { "text":"×", "class":"TextView", "bounds":[50,200,110,260] }
+            ]}
+            """.trimIndent(),
+        )
+        assertNull(KeywordStrategy.pick(root, screenWidth = 1000, screenHeight = 2600))
+    }
+
+    @Test
+    fun plainSkipMidScreenUnclickableStillAccepted() {
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1000,2600], "children":[
+              { "text":"跳过", "class":"TextView", "bounds":[100,1300,300,1360] }
+            ]}
+            """.trimIndent(),
+        )
+        assertNotNull(KeywordStrategy.pick(root, screenWidth = 1000, screenHeight = 2600))
+    }
 }

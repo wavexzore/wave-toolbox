@@ -3,7 +3,7 @@
   id: "toolbox.demo.mm",
   name: "演示：微信（切到通讯录）",
   order: 95,
-  enabled: true,
+  enabled: false, // 2026-10-14 误操作修复：演示规则默认关闭
   schemaVersion: 1,
   apps: [{ id: "com.tencent.mm" }],
   rules: [

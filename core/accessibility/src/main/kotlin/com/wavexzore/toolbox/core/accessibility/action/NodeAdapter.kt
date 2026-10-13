@@ -16,7 +16,7 @@ import javax.inject.Singleton
  * 用于 performAction）。节点不主动 recycle（API 33 起废弃；单事件树生命周期内保持有效）。
  */
 class AndroidNodeView internal constructor(
-    internal val source: AccessibilityNodeInfo,
+    val source: AccessibilityNodeInfo,
     override val depth: Int,
     override val bounds: Rect,
     override val isVisible: Boolean,
@@ -142,6 +142,41 @@ class WindowTreeProvider @Inject constructor(
 
         val tree = runCatching { NodeAdapter.fromRoot(root, metrics.widthPixels, metrics.heightPixels) }.getOrNull() ?: return null
         return Picked(tree, window?.let(::displayIdOf) ?: 0, window?.type ?: -1, runCatching { root.packageName?.toString() }.getOrNull())
+    }
+
+    /**
+     * pkg 的 focused/active 应用窗口根节点边界（用于区分"全屏 Activity 窗口"与"小弹窗"）；
+     * 取不到返回 null。
+     */
+    fun focusedWindowBounds(pkg: String): com.wavexzore.toolbox.core.selector.Rect? {
+        val service = SelectToSpeakService.instance ?: return null
+        val windows = runCatching { service.windows }.getOrNull().orEmpty()
+        val window = windows.firstOrNull { w ->
+            runCatching {
+                (w.type == AccessibilityWindowInfo.TYPE_APPLICATION && displayIdOf(w) == 0) &&
+                    (w.isFocused || w.isActive) && w.root?.packageName?.toString() == pkg
+            }.getOrDefault(false)
+        } ?: return null
+        val root = runCatching { window.root }.getOrNull() ?: return null
+        val b = runCatching { android.graphics.Rect().also { root.getBoundsInScreen(it) } }.getOrNull() ?: return null
+        return com.wavexzore.toolbox.core.selector.Rect(b.left, b.top, b.right, b.bottom)
+    }
+
+    /**
+     * pkg 是否处于前台：存在该包的 focused/active 应用窗口（主屏），且无其它应用窗口占焦。
+     * 服务未连接/窗口未知时保守返回 true（沿用旧行为）。用于避免"后台窗口按坐标点到前台应用"。
+     */
+    fun isAppForeground(pkg: String): Boolean {
+        val service = SelectToSpeakService.instance ?: return true
+        val windows = runCatching { service.windows }.getOrNull().orEmpty()
+            .filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION && displayIdOf(it) == 0 }
+        if (windows.isEmpty()) return true
+        val otherFocused = windows.any { w ->
+            runCatching {
+                (w.isFocused || w.isActive) && w.root?.packageName?.toString()?.let { it != pkg } == true
+            }.getOrDefault(false)
+        }
+        return !otherFocused
     }
 
     /** `AccessibilityWindowInfo.displayId` 仅 API 30+；低版本回退 0（主屏）。 */
