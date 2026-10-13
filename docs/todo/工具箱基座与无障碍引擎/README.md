@@ -18,15 +18,15 @@ schema_version: "1.0"
 feature_id: "toolbox-core"
 feature_name: "工具箱基座与无障碍引擎"
 status: "in_progress"
-current_task: "T-002"
-last_completed_task: "T-001"
-next_action: "执行 T-002：app 壳（Hilt、Compose 主题、导航、设置存储）→ 可安装启动空壳"
+current_task: "T-003"
+last_completed_task: "T-002"
+next_action: "执行 T-003：SelectToSpeakService（伪装类名）注册 + 配置 XML + 开启状态观测；复跑 C-005 空树冒烟"
 verification_status: "pass"
 research_status: "pass"
 call_chain_status: "pass"
 code_calibration_status: "pass"
-last_verification_command: "./gradlew test lint :app:assembleDebug（2026-10-13 PASS）"
-last_updated: "2026-10-13T22:10:00+08:00"
+last_verification_command: "./gradlew test lint :app:assembleDebug（2026-10-13 PASS）+ 两设备 am start -W ok"
+last_updated: "2026-10-13T22:45:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
   - "01-实施计划.md#6-LLM任务队列"
@@ -127,7 +127,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | T-ID | 任务 | Status | DependsOn | Evidence | Next |
 |---|---|---|---|---|---|
 | T-001 | Gradle 多模块骨架 + 版本目录 | done | none | C-001 PASS（APK 902KB） | 初始化并构建 |
-| T-002 | app 壳：Hilt、Compose 主题、导航、设置存储 | todo | T-001 | none | 首页空壳可运行 |
+| T-002 | app 壳：Hilt、Compose 主题、导航、设置存储 | done | T-001 | C-004 PASS（安装+启动+持久化） | 首页空壳可运行 |
 | T-003 | SelectToSpeakService（伪装类名） + 配置 XML + manifest + 开启状态观测 | todo | T-002 | none | 服务可开启 |
 | T-004 | 事件管线（过滤/节流/单线程/ANR 守卫） | todo | T-003 | none | 管线单测 |
 | T-005 | 选择器引擎（NodeView 抽象/解析/匹配/快照 fixtures） | todo | T-001 | none | 单测通过 |
@@ -204,7 +204,7 @@ interface ToolFeature {
 
 | AC-ID | 验收项 | 覆盖任务 | 验证命令/证据 | Status |
 |---|---|---|---|---|
-| AC-001 | Debug 包可构建、安装、启动 | T-001,T-002 | `./gradlew :app:assembleDebug` + `adb install` | todo |
+| AC-001 | Debug 包可构建、安装、启动 | T-001,T-002 | `./gradlew :app:assembleDebug` + `adb install` | pass |
 | AC-002 | 服务开启后日志页持续出现事件记录 | T-003,T-004 | 手动：操作任意 App 后查看日志 | todo |
 | AC-003 | 选择器解析匹配单测覆盖正/反/边界 | T-005 | `./gradlew :core:selector:test` | todo |
 | AC-004 | 规则按 pkg+activity 命中并执行点击 | T-006,T-007 | 手动：用测试 Apk 或系统界面验证 | todo |
