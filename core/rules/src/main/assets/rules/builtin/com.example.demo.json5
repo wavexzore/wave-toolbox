@@ -1,0 +1,40 @@
+{
+  // 示例：完整字段展示（内置规则 Top20 的占位样板）
+  id: "com.example.demo",
+  name: "示例应用广告跳过",
+  order: 10,
+  enabled: true,
+  schemaVersion: 1,
+  apps: [
+    { id: "com.example.demo" },
+    { id: "com.example.demo.pro", versionCode: { min: 100 } },
+  ],
+  versionName: { min: "1.0" },   // 组级：低于 1.0 不启用
+  rules: [
+    {
+      id: "demo@SplashActivity",
+      name: "开屏跳过（右上角）",
+      order: 0,
+      activityIds: ["com.example.demo.SplashActivity", ".SplashActivity2"],
+      matches: ['@[vid="skip_container"]', '[text^="跳过"]'],
+      excludeMatches: ['[text="跳过登录"]'],
+      action: "click",
+      actionCd: 500,
+      actionMaximum: 1,
+      enabled: true,
+      note: "标准右上角跳过"
+    },
+    {
+      id: "demo@SplashActivity.center",
+      name: "开屏跳过（居中百分比坐标）",
+      order: 1,
+      activityIds: ["SplashActivity"],
+      versionCode: [100, 999, [], [666]],   // 数组形态：[min, max, include, exclude]
+      matches: ['[text="跳过广告"]'],
+      action: "click",
+      position: { x: "95%", y: "5%" },
+      actionCd: 300,
+      actionMaximum: 2
+    }
+  ]
+}

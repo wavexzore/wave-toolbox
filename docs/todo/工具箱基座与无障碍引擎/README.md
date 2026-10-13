@@ -18,15 +18,15 @@ schema_version: "1.0"
 feature_id: "toolbox-core"
 feature_name: "工具箱基座与无障碍引擎"
 status: "in_progress"
-current_task: "T-006"
-last_completed_task: "T-005"
-next_action: "执行 T-006：规则模型与仓库（JSON5 schema + assets 内置 Top20 + version/activity 匹配）"
+current_task: "T-007"
+last_completed_task: "T-006"
+next_action: "执行 T-007：动作执行器（点击链/手势/冷却/次数/回退），接通 RuleIndex→SelectorEngine→手势分发"
 verification_status: "pass"
 research_status: "pass"
 call_chain_status: "pass"
 code_calibration_status: "pass"
-last_verification_command: "C-002 PASS（52/52）；./gradlew test lint :app:assembleDebug PASS（2026-10-13）"
-last_updated: "2026-10-13T23:25:00+08:00"
+last_verification_command: "C-007 PASS（39/39）；./gradlew test lint :app:assembleDebug PASS（2026-10-13）"
+last_updated: "2026-10-13T23:50:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
   - "01-实施计划.md#6-LLM任务队列"
@@ -131,7 +131,7 @@ blocker_policy: "遇到 blocked 时记录 B-###、失败证据、已尝试方案
 | T-003 | SelectToSpeakService（伪装类名） + 配置 XML + manifest + 开启状态观测 | done | T-002 | C-005 PASS（407B↔89517B A/B/C） | 服务可开启 |
 | T-004 | 事件管线（过滤/节流/单线程/ANR 守卫） | done | T-003 | C-006 PASS（19/19）+ 压测无 ANR | 管线单测 |
 | T-005 | 选择器引擎（NodeView 抽象/解析/匹配/快照 fixtures） | done | T-001 | C-002 PASS（52/52） | 单测通过 |
-| T-006 | 规则模型 + 仓库（JSON5/assets/Room）+ 版本与 activity 匹配 | todo | T-005 | none | 单测通过 |
+| T-006 | 规则模型 + 仓库（JSON5/assets/Room）+ 版本与 activity 匹配 | done | T-005 | C-007 PASS（39/39） | 单测通过 |
 | T-007 | 动作执行器（点击链/手势/冷却/次数/回退） | todo | T-004,T-005 | none | 单测+手动 |
 | T-008 | 任务编排器（Step DSL/超时/重试/取消/进度） | todo | T-007 | none | 单测通过 |
 | T-009 | 保活：overlay+通知+开机自启+OEM 引导 | todo | T-003 | none | 重启恢复 |
@@ -207,7 +207,7 @@ interface ToolFeature {
 | AC-001 | Debug 包可构建、安装、启动 | T-001,T-002 | `./gradlew :app:assembleDebug` + `adb install` | pass |
 | AC-002 | 服务开启后日志页持续出现事件记录 | T-003,T-004 | 手动：操作任意 App 后查看日志 | pass |
 | AC-003 | 选择器解析匹配单测覆盖正/反/边界 | T-005 | `./gradlew :core:selector:test` | pass |
-| AC-004 | 规则按 pkg+activity 命中并执行点击 | T-006,T-007 | 手动：用测试 Apk 或系统界面验证 | todo |
+| AC-004 | 规则按 pkg+activity 命中并执行点击 | T-006,T-007 | T-006 解析/索引/匹配（C-007）；待 T-007 点击执行收口 | in_progress |
 | AC-005 | 编排器任务可等待条件、超时、取消 | T-008 | `./gradlew :core:automation:test` | todo |
 | AC-006 | 重启后服务自动恢复、通知常驻 | T-009 | 手动：重启设备验证 | todo |
 | AC-007 | 空壳特性可注册、可开关、有设置页 | T-010 | 手动：首页出现条目并可进入 | todo |
@@ -232,6 +232,7 @@ interface ToolFeature {
 | C-003 | `./gradlew :core:automation:test` | T-008 后 | PASS |
 | C-004 | `adb install -r app/build/outputs/apk/debug/app-debug.apk` | T-002 后 | PASS |
 | C-005 | 微信空树门禁冒烟：`adb shell uiautomator dump`（微信主界面，根包校验）→ 文件 ≥50KB 且根 cls 非 null | T-003 后、T-012 | PASS |
+| C-007 | `./gradlew :core:rules:test` | T-006 后 | PASS（39/39） |
 | C-999 | `./gradlew test lint :app:assembleDebug` | 全部完成后 | PASS |
 
 ---

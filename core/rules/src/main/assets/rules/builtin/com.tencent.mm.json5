@@ -1,0 +1,20 @@
+{
+  id: "com.tencent.mm",
+  name: "微信示例规则",
+  order: 50,
+  enabled: true,
+  schemaVersion: 1,
+  apps: [{ id: "com.tencent.mm" }],
+  rules: [
+    {
+      id: "mm@LauncherUI.splash",
+      name: "启动图跳过",
+      order: 0,
+      activityIds: ["com.tencent.mm.ui.LauncherUI"],
+      matches: ['[text="点击进入微信"]'],
+      action: "click",
+      actionCd: 800,
+      actionMaximum: 1
+    }
+  ]
+}
