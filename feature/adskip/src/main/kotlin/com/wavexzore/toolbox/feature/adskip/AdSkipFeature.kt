@@ -349,8 +349,20 @@ class AdSkipFeature @Inject constructor(
 
     /** 设置面板（SPI）。 */
     @Composable
-    override fun SettingsPane(scope: ColumnScope, modifier: Modifier) {
-        AdSkipSettingsPane(feature = this, config = config, loaderState = loader.state, modifier = modifier)
+    override fun SettingsPane(scope: ColumnScope, modifier: Modifier, onOpenApps: () -> Unit) {
+        AdSkipSettingsPane(
+            feature = this,
+            config = config,
+            loaderState = loader.state,
+            onOpenApps = onOpenApps,
+            modifier = modifier,
+        )
+    }
+
+    /** 按应用控制整屏（SPI）。 */
+    @Composable
+    override fun AppsScreen(onBack: () -> Unit) {
+        AdSkipAppsScreen(feature = this, config = config, onBack = onBack)
     }
 
     // ---- 设置页辅助（导入导出/应用列表） ----

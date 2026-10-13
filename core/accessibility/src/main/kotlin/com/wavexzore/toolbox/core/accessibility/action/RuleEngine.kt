@@ -65,6 +65,9 @@ class RuleEngine @Inject constructor(
     private var verifyMs = SettingsRepository.DEFAULT_CLICK_VERIFY_MS.toLong()
 
     @Volatile
+    private var logEnabled = SettingsRepository.DEFAULT_EVENT_RECORD
+
+    @Volatile
     private var running = false
 
     private var collectorsStarted = false
@@ -97,13 +100,15 @@ class RuleEngine @Inject constructor(
         durationMs: Long = 0,
         now: Long = System.currentTimeMillis(),
     ) {
-        actionBuffer.addFirst(
-            ActionRecord(++actionJournalSeq, now, kind, rule.id, pkg, mechanism, ok, detail),
-        )
-        while (actionBuffer.size > ACTION_LOG_LIMIT) actionBuffer.removeLast()
-        if (now - lastActionFlushAt >= ACTION_FLUSH_INTERVAL_MS) {
-            lastActionFlushAt = now
-            _recentActions.value = actionBuffer.toList()
+        if (logEnabled) {
+            actionBuffer.addFirst(
+                ActionRecord(++actionJournalSeq, now, kind, rule.id, pkg, mechanism, ok, detail),
+            )
+            while (actionBuffer.size > ACTION_LOG_LIMIT) actionBuffer.removeLast()
+            if (now - lastActionFlushAt >= ACTION_FLUSH_INTERVAL_MS) {
+                lastActionFlushAt = now
+                _recentActions.value = actionBuffer.toList()
+            }
         }
         statsRepository.record(
             pkg = pkg,
@@ -120,6 +125,7 @@ class RuleEngine @Inject constructor(
         if (collectorsStarted) return
         collectorsStarted = true
         scope.launch { settingsRepository.clickVerifyMs.collect { verifyMs = it.toLong() } }
+        scope.launch { settingsRepository.eventRecordEnabled.collect { logEnabled = it } }
         scope.launch { runCatching { loadIndex(importBuiltin = true) } }
         scope.launch {
             pipeline.events.collect { event ->

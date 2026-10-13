@@ -1,6 +1,5 @@
 package com.wavexzore.toolbox.ui.home
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,26 +10,34 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.wavexzore.toolbox.BuildConfig
+import com.wavexzore.toolbox.core.design.components.WaveCard
+import com.wavexzore.toolbox.core.design.components.WaveChevron
+import com.wavexzore.toolbox.core.design.components.WaveIconBox
+import com.wavexzore.toolbox.core.design.components.WaveIconButton
+import com.wavexzore.toolbox.core.design.components.WaveNote
+import com.wavexzore.toolbox.core.design.components.WavePill
+import com.wavexzore.toolbox.core.design.components.WaveScaffold
+import com.wavexzore.toolbox.core.design.components.WaveSectionLabel
+import com.wavexzore.toolbox.core.design.components.WaveTone
+import com.wavexzore.toolbox.core.design.theme.Wave
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** 首页（原型 01）：功能列表 + 更多能力占位；引擎状态在设置页。 */
 @Composable
 fun HomeScreen(
     onOpenSettings: () -> Unit,
@@ -38,152 +45,91 @@ fun HomeScreen(
     onOpenFeature: (String) -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
-    val engineEnabled by viewModel.engineEnabled.collectAsStateWithLifecycle()
-    val accessibilityEnabled by viewModel.accessibilityEnabled.collectAsStateWithLifecycle()
-    val setupCompleted by viewModel.setupCompleted.collectAsStateWithLifecycle()
     val features by viewModel.features.collectAsStateWithLifecycle()
 
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("wave工具箱") }) },
-    ) { innerPadding ->
+    WaveScaffold { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 20.dp),
         ) {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "引擎状态",
-                        style = MaterialTheme.typography.titleMedium,
+                        "工具箱",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight(650),
+                        letterSpacing = (-0.6).sp,
+                        color = Wave.Ink,
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = if (engineEnabled) "已开启（等待接入无障碍服务）" else "已关闭",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        TextButton(onClick = onOpenSettings) { Text("前往设置") }
-                    }
+                    Text("轻量 · 纯本地 · 无联网", fontSize = 11.5.sp, color = Wave.Ink2, modifier = Modifier.padding(top = 2.dp))
                 }
+                WaveIconButton(Icons.Outlined.Info, "说明", onOpenSetupGuide, tint = Wave.Ink2)
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "无障碍服务",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = if (accessibilityEnabled) "已开启" else "未开启（引擎需要它才能工作）",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (accessibilityEnabled) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        },
-                    )
+            WaveSectionLabel("功能")
+            features.forEach { feature ->
+                WaveCard(onClick = { onOpenFeature(feature.id) }) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        TextButton(onClick = viewModel::openAccessibilitySettings) {
-                            Text(if (accessibilityEnabled) "查看设置" else "去开启")
+                        WaveIconBox(Icons.Filled.Bolt)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                feature.name,
+                                fontSize = 15.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Wave.Ink,
+                            )
+                            Text(
+                                feature.description,
+                                fontSize = 12.5.sp,
+                                color = Wave.Ink2,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        WaveChevron()
+                    }
+                    Row(
+                        modifier = Modifier.padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
+                        if (feature.enabled) {
+                            WavePill("已启用", WaveTone.Green)
+                        } else {
+                            WavePill("已停用")
                         }
                     }
                 }
+                Spacer(Modifier.height(12.dp))
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "首次引导",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = if (setupCompleted || accessibilityEnabled) "已完成（可复查）" else "建议先完成：无障碍 → 电池优化 → 自启白名单",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        TextButton(onClick = onOpenSetupGuide) { Text("打开引导") }
+            WaveCard(modifier = Modifier.alpha(0.72f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    WaveIconBox(Icons.Outlined.Widgets)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("更多能力", fontSize = 15.5.sp, fontWeight = FontWeight.SemiBold, color = Wave.Ink)
+                        Text("应用内弹窗拦截 · 桌面小组件", fontSize = 12.5.sp, color = Wave.Ink2)
                     }
+                    WavePill("规划中")
                 }
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("功能", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(8.dp))
-                    if (features.isEmpty()) {
-                        Text(
-                            text = "暂无已注册特性",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    features.forEachIndexed { index, feature ->
-                        if (index > 0) HorizontalDivider()
-                        FeatureRow(
-                            title = feature.name,
-                            subtitle = feature.description,
-                            enabled = feature.enabled,
-                            onToggle = { viewModel.setFeatureEnabled(feature.id, it) },
-                            onClick = { onOpenFeature(feature.id) },
-                        )
-                    }
-                }
-            }
-
-            Text(
-                text = "版本 ${BuildConfig.VERSION_NAME} · Apache-2.0",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
+            WaveNote("全部数据仅存本机，不申请网络权限。")
+            Spacer(Modifier.height(24.dp))
         }
-    }
-}
-
-@Composable
-private fun FeatureRow(
-    title: String,
-    subtitle: String,
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-        }
-        Switch(checked = enabled, onCheckedChange = onToggle)
     }
 }

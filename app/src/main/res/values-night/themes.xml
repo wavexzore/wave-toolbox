@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme.WaveToolbox" parent="@android:style/Theme.Material.NoActionBar" />
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- 米白直角方案为浅色系统：夜间同样使用浅色主题 -->
+    <style name="Theme.WaveToolbox" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
+        <item name="android:windowBackground">#F7F8F4</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
 </resources>

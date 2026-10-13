@@ -2,37 +2,34 @@ package com.wavexzore.toolbox.feature.settings
 
 import android.content.Context
 import android.content.Intent
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.wavexzore.toolbox.core.design.components.WaveCard
+import com.wavexzore.toolbox.core.design.components.WaveNote
+import com.wavexzore.toolbox.core.design.components.WavePrimaryButton
+import com.wavexzore.toolbox.core.design.components.WaveScaffold
+import com.wavexzore.toolbox.core.design.components.WaveTextAction
+import com.wavexzore.toolbox.core.design.components.WaveTopBar
+import com.wavexzore.toolbox.core.design.theme.Wave
 import java.io.File
 
-/** 诊断导出（T-011）：zip 含设备/设置/规则/统计/事件/动作/快照/日志，可分享。 */
-@OptIn(ExperimentalMaterial3Api::class)
+/** 诊断导出：zip 含设备/设置/规则/统计/日志，可分享。 */
 @Composable
 fun DiagnosticsScreen(
     onBack: () -> Unit,
@@ -41,62 +38,48 @@ fun DiagnosticsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("诊断导出") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-            )
-        },
-    ) { innerPadding ->
+    WaveScaffold(topBar = { WaveTopBar("导出诊断文件", onBack = onBack) }) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(innerPadding).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 20.dp),
         ) {
-            Text(
-                text = "打包设备信息、引擎设置、规则、7 天统计、事件/动作环、最近快照与日志（约数百 KB）。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+            WaveNote("打包设备信息、引擎设置、规则、7 天统计、事件/动作环与最近快照（约数百 KB）。")
+            Spacer(Modifier.height(6.dp))
 
-            Button(
+            WavePrimaryButton(
+                text = if (uiState.busy) "打包中…" else "生成诊断 zip",
                 onClick = viewModel::export,
                 enabled = !uiState.busy,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (uiState.busy) "打包中…" else "生成诊断 zip")
-            }
+            )
 
             uiState.error?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                Text(it, fontSize = 13.sp, color = Wave.RedTx, modifier = Modifier.padding(top = 10.dp))
             }
 
             uiState.file?.let { file ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = "已生成（${file.length() / 1024} KB）",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Text(
-                            text = file.name,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            text = "内容：${uiState.entries.joinToString(", ")}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = { shareZip(context, file) }) { Text("分享 zip") }
-                        }
+                Spacer(Modifier.height(12.dp))
+                WaveCard {
+                    Text("已生成（${file.length() / 1024} KB）", fontSize = 13.5.sp, color = Wave.Ink)
+                    Text(
+                        file.name,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.5.sp,
+                        color = Wave.Ink3,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                    Text(
+                        "内容：${uiState.entries.joinToString(", ")}",
+                        fontSize = 12.sp,
+                        color = Wave.Ink2,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
+                    ) {
+                        WaveTextAction("分享 zip", onClick = { shareZip(context, file) })
                     }
                 }
             }

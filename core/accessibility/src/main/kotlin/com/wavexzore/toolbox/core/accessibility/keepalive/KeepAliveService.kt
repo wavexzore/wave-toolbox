@@ -156,6 +156,11 @@ class KeepAliveService : Service() {
             context.startForegroundService(intent)
         }
 
+        /** 停止（关闭「前台保活」时调用）。 */
+        fun stop(context: Context) {
+            runCatching { context.stopService(Intent(context, KeepAliveService::class.java)) }
+        }
+
         fun refresh(context: Context) {
             context.startService(Intent(context, KeepAliveService::class.java).setAction(ACTION_REFRESH))
         }

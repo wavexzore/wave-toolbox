@@ -49,6 +49,18 @@ class SettingsRepository @Inject constructor(
     val setupCompleted: Flow<Boolean> = context.settingsDataStore.data
         .map { prefs -> prefs[KEY_SETUP_COMPLETED] ?: false }
 
+    /** 前台常驻服务开关（`keepalive.enabled`，默认 true）。 */
+    val keepAliveEnabled: Flow<Boolean> = context.settingsDataStore.data
+        .map { prefs -> prefs[KEY_KEEPALIVE_ENABLED] ?: DEFAULT_KEEPALIVE_ENABLED }
+
+    /** 开机自启（`boot.autostart`，默认 true）。 */
+    val bootAutostartEnabled: Flow<Boolean> = context.settingsDataStore.data
+        .map { prefs -> prefs[KEY_BOOT_AUTOSTART] ?: DEFAULT_BOOT_AUTOSTART }
+
+    /** 事件记录（`log.enabled`，默认 true）：关闭后不再记明细环，统计仍写入。 */
+    val eventRecordEnabled: Flow<Boolean> = context.settingsDataStore.data
+        .map { prefs -> prefs[KEY_EVENT_RECORD] ?: DEFAULT_EVENT_RECORD }
+
     /** 特性开关（`feature.<id>.enabled`，动态键；缺省取特性默认值）。 */
     fun featureEnabled(id: String, default: Boolean): Flow<Boolean> = context.settingsDataStore.data
         .map { prefs -> prefs[booleanPreferencesKey("feature.$id.enabled")] ?: default }
@@ -75,6 +87,23 @@ class SettingsRepository @Inject constructor(
         context.settingsDataStore.edit { prefs -> prefs[KEY_SETUP_COMPLETED] = completed }
     }
 
+    suspend fun setKeepAliveEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { prefs -> prefs[KEY_KEEPALIVE_ENABLED] = enabled }
+    }
+
+    suspend fun setBootAutostartEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { prefs -> prefs[KEY_BOOT_AUTOSTART] = enabled }
+    }
+
+    suspend fun setEventRecordEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { prefs -> prefs[KEY_EVENT_RECORD] = enabled }
+    }
+
+    /** 重置全部设置（不含：数据库统计 / 特性配置）。 */
+    suspend fun clearAll() {
+        context.settingsDataStore.edit { prefs -> prefs.clear() }
+    }
+
     suspend fun setContentThrottleMs(ms: Int) {
         context.settingsDataStore.edit { prefs ->
             prefs[KEY_CONTENT_THROTTLE_MS] = ms.coerceIn(MIN_CONTENT_THROTTLE_MS, MAX_CONTENT_THROTTLE_MS)
@@ -92,6 +121,9 @@ class SettingsRepository @Inject constructor(
         val KEY_CLICK_FALLBACK = booleanPreferencesKey("engine.clickFallback")
         val KEY_CLICK_VERIFY_MS = intPreferencesKey("engine.clickVerifyMs")
         val KEY_SETUP_COMPLETED = booleanPreferencesKey("setup.completed")
+        val KEY_KEEPALIVE_ENABLED = booleanPreferencesKey("keepalive.enabled")
+        val KEY_BOOT_AUTOSTART = booleanPreferencesKey("boot.autostart")
+        val KEY_EVENT_RECORD = booleanPreferencesKey("log.enabled")
 
         const val DEFAULT_ENGINE_ENABLED = true
         const val DEFAULT_CONTENT_THROTTLE_MS = 100
@@ -102,5 +134,9 @@ class SettingsRepository @Inject constructor(
         const val DEFAULT_CLICK_VERIFY_MS = 200
         const val MIN_CLICK_VERIFY_MS = 10
         const val MAX_CLICK_VERIFY_MS = 2000
+
+        const val DEFAULT_KEEPALIVE_ENABLED = true
+        const val DEFAULT_BOOT_AUTOSTART = true
+        const val DEFAULT_EVENT_RECORD = true
     }
 }

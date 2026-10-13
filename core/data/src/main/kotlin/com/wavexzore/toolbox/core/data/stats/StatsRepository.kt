@@ -68,6 +68,10 @@ class StatsRepository @Inject constructor(
 
     suspend fun allSince(since: Long, limit: Int = 5_000): List<StatRecordEntity> = dao.allSince(since, limit)
 
+    /** 特性维度明细流（日志页）。 */
+    fun recordsSinceFor(featureId: String, since: Long = 0L, limit: Int = 200): Flow<List<StatRecordEntity>> =
+        dao.recordsSinceFor(featureId, since, limit)
+
     fun clearAll() {
         scope.launch { dao.clearAll() }
     }

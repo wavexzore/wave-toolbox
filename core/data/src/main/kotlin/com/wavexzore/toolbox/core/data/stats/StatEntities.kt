@@ -67,6 +67,9 @@ interface StatDao {
     @Query("SELECT * FROM stat_records WHERE at >= :since ORDER BY at DESC LIMIT :limit")
     suspend fun allSince(since: Long, limit: Int): List<StatRecordEntity>
 
+    @Query("SELECT * FROM stat_records WHERE feature_id = :featureId AND at >= :since ORDER BY at DESC LIMIT :limit")
+    fun recordsSinceFor(featureId: String, since: Long, limit: Int): Flow<List<StatRecordEntity>>
+
     @Query("DELETE FROM stat_records WHERE at < :before")
     suspend fun deleteBefore(before: Long)
 
