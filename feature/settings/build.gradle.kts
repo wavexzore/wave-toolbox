@@ -3,6 +3,8 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -17,10 +19,32 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    buildFeatures {
+        compose = true
+    }
 }
 
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
     }
+}
+
+dependencies {
+    implementation(project(":core:common"))
+    implementation(project(":core:data"))
+    implementation(project(":core:design"))
+
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.core)
+    implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.kotlinx.coroutines.android)
+
+    implementation(libs.hilt.android)
+    implementation(libs.hilt.lifecycle.viewmodel.compose)
+    ksp(libs.hilt.compiler)
 }
