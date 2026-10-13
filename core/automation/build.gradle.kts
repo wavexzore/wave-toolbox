@@ -17,10 +17,22 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
     }
+}
+
+dependencies {
+    implementation(project(":core:selector"))
+    implementation(libs.kotlinx.coroutines.android)
+
+    testImplementation(kotlin("test"))
+    testImplementation(libs.kotlinx.coroutines.test)
 }
