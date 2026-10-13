@@ -58,7 +58,11 @@ class StatsRepository @Inject constructor(
 
     fun totalsSince(since: Long): Flow<StatsTotals> = dao.totalsSince(since)
 
+    fun totalsSinceFor(featureId: String, since: Long): Flow<StatsTotals> = dao.totalsSinceFor(featureId, since)
+
     fun topPackages(since: Long, limit: Int = 10): Flow<List<PkgStat>> = dao.topPackages(since, limit)
+
+    fun topPackagesFor(featureId: String, since: Long, limit: Int = 20): Flow<List<PkgStat>> = dao.topPackagesFor(featureId, since, limit)
 
     fun byKind(since: Long): Flow<List<KindStat>> = dao.byKind(since)
 

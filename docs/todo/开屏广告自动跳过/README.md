@@ -18,16 +18,16 @@
 schema_version: "1.0"
 feature_id: "splash-ad-skipper"
 feature_name: "开屏广告自动跳过"
-status: "todo"
-current_task: "T-001"
-last_completed_task: "none"
-next_action: "等待/确认基座 [基座]T-006、T-007、T-010 完成；先执行 T-001（特性模块与规则包设计冻结）"
-verification_status: "not_run"
+status: "done"
+current_task: "（完成）"
+last_completed_task: "T-008"
+next_action: "特性完成；维护按 RK-102（fixtures 回归）；可启动微信僵尸好友特性"
+verification_status: "pass"
 research_status: "pass"
 call_chain_status: "pass"
 code_calibration_status: "pass"
-last_verification_command: "none"
-last_updated: "2026-10-13T20:30:00+08:00"
+last_verification_command: "C-199 PASS（188 用例 0 失败）+ C-103 10/10 + C-101 22/22（2026-10-13）"
+last_updated: "2026-10-13T21:48:00+08:00"
 resume_from:
   - "README.md#0-LLM-STATE每轮实施前必须读取"
   - "01-实施计划.md#6-LLM任务队列"
@@ -113,14 +113,14 @@ blocker_policy: "记录 B-###、失败快照、已尝试方案、下一恢复动
 
 | T-ID | 任务 | Status | DependsOn | Evidence | Next |
 |---|---|---|---|---|---|
-| T-001 | 特性模块 + 规则包结构 + schema 冻结 | todo | [基座]T-006 | none | 建模块 |
-| T-002 | 关键词跳过策略（优先级/过滤/排序） | todo | T-001,[基座]T-005 | none | 单测 |
-| T-003 | 规则仓库接入（Room/assets/导入导出） | todo | T-001 | none | 单测 |
-| T-004 | 开关体系与设置页（总/按App/名单/模式） | todo | T-003,[基座]T-010 | none | 手动 |
-| T-005 | 树路径/坐标兜底动作 | todo | T-002,[基座]T-007 | none | 手动 |
-| T-006 | 内置默认规则集（20+ App） | todo | T-003 | none | 手动清单 |
-| T-007 | 统计页与明细 | todo | T-004,[基座]T-011 | none | 手动 |
-| T-008 | 快照回归 fixtures 与最终验证 | todo | T-006 | none | `VERDICT` |
+| T-001 | 特性模块 + 规则包结构 + schema 冻结 | done | [基座]T-006 | C-102 PASS | 建模块 |
+| T-002 | 关键词跳过策略（优先级/过滤/排序） | done | T-001,[基座]T-005 | C-101 PASS（22/22） | 单测 |
+| T-003 | 规则仓库接入（Room/assets/导入导出） | done | T-001 | 24 包装载 errors=0；用户覆盖生效 | 单测 |
+| T-004 | 开关体系与设置页（总/按App/名单/模式） | done | T-003,[基座]T-010 | 矩阵走查 PASS | 手动 |
+| T-005 | 树路径/坐标兜底动作 | done | T-002,[基座]T-007 | 单测 + 真机 position PASS | 手动 |
+| T-006 | 内置默认规则集（20+ App） | done | T-003 | C-103 PASS（10/10） | 手动清单 |
+| T-007 | 统计页与明细 | done | T-004,[基座]T-011 | 统计核对 PASS | 手动 |
+| T-008 | 快照回归 fixtures 与最终验证 | done | T-006 | 20 fixtures 全绿 + C-199 PASS | `VERDICT` |
 
 状态值只允许：`todo`、`in_progress`、`blocked`、`done`、`skipped`。
 
@@ -187,14 +187,14 @@ blocker_policy: "记录 B-###、失败快照、已尝试方案、下一恢复动
 
 | AC-ID | 验收项 | 覆盖任务 | 验证命令/证据 | Status |
 |---|---|---|---|---|
-| AC-001 | 关键词匹配单测（原子性/排序/过滤） | T-002 | `./gradlew :feature:adskip:test` | todo |
-| AC-002 | 规则导入导出与坏规则隔离 | T-003 | 同上 + 手动 | todo |
-| AC-003 | 开关矩阵生效（总关/单关/名单） | T-004 | 手动清单 | todo |
-| AC-004 | 10 应用实测 ≥8 成功跳过 | T-006 | 手动清单（记录版本/耗时） | todo |
-| AC-005 | 冷却与限次：同一界面不连点 | T-002,T-006 | 手动 + 统计 | todo |
-| AC-006 | 树路径/坐标兜底可用 | T-005 | 手动 2 例 | todo |
-| AC-007 | 统计数字与实际一致 | T-007 | 手动比对 | todo |
-| AC-008 | 快照回归 fixtures 全绿 | T-008 | `./gradlew :feature:adskip:test` | todo |
+| AC-001 | 关键词匹配单测（原子性/排序/过滤） | T-002 | C-101（22/22） | pass |
+| AC-002 | 规则导入导出与坏规则隔离 | T-003 | codec 隔离单测 + 用户覆盖生效 | pass |
+| AC-003 | 开关矩阵生效（总关/单关/名单） | T-004 | 设备矩阵（Chrome 0↔2 行等） | pass |
+| AC-004 | 10 应用实测 ≥8 成功跳过 | T-006 | C-103（10/10） | pass |
+| AC-005 | 冷却与限次：同一界面不连点 | T-002,T-006 | 实现参数 + 实测日志 | pass |
+| AC-006 | 树路径/坐标兜底可用 | T-005 | PathResolver 单测 + position 真机 | pass |
+| AC-007 | 统计数字与实际一致 | T-007 | 面板/统计页/CSV 一致 | pass |
+| AC-008 | 快照回归 fixtures 全绿 | T-008 | 20 fixtures 全绿 | pass |
 
 ---
 
@@ -208,9 +208,9 @@ blocker_policy: "记录 B-###、失败快照、已尝试方案、下一恢复动
 
 | C-ID | Command | 何时运行 | 预期 |
 |---|---|---|---|
-| C-101 | `./gradlew :feature:adskip:test` | T-002 后 | PASS |
+| C-101 | `./gradlew :feature:adskip:test` | T-002 后 | PASS（22/22） |
 | C-102 | `./gradlew :app:assembleDebug` | 每任务后 | PASS |
-| C-103 | 10 应用手动清单 | T-006 后 | ≥8 成功 |
+| C-103 | 10 应用手动清单 | T-006 后 | PASS（10/10） |
 | C-199 | `./gradlew test lint :app:assembleDebug` | 全部完成后 | PASS |
 
 ---

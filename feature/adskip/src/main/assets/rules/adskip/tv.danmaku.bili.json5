@@ -1,0 +1,28 @@
+// 哔哩哔哩（tv.danmaku.bili）— 关键词优先；弹窗组 any 模式兜底（schema: rules/adskip/README.md）
+{
+  schemaVersion: 1,
+  pkg: "tv.danmaku.bili",
+  packVersion: 1,
+  groups: [
+    {
+      id: "tv.danmaku.bili#splash",
+      name: "开屏跳过",
+      order: 0,
+      mode: "splash",
+      keywords: ["跳过", "关闭"],
+      actionCd: 800,
+      actionMaximum: 1,
+      delayMs: 150,
+    },
+    {
+      id: "tv.danmaku.bili#popup",
+      name: "弹窗关闭",
+      order: 10,
+      mode: "any",
+      matches: ['[text*="我知道了"]', '[text*="关闭"]', '@[vid="close"]'],
+      actionCd: 1000,
+      actionMaximum: 3,
+      delayMs: 150,
+    },
+  ],
+}
