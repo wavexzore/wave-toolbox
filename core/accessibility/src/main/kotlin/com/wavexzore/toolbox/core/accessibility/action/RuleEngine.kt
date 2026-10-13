@@ -10,6 +10,7 @@ import com.wavexzore.toolbox.core.accessibility.pipeline.EventPipeline
 import com.wavexzore.toolbox.core.common.dispatchers.AppDispatchers
 import com.wavexzore.toolbox.core.data.rules.RuleRepository
 import com.wavexzore.toolbox.core.data.settings.SettingsRepository
+import com.wavexzore.toolbox.core.data.stats.StatsRepository
 import com.wavexzore.toolbox.core.rules.index.RuleIndex
 import com.wavexzore.toolbox.core.rules.model.RawRule
 import com.wavexzore.toolbox.core.selector.NodeView
@@ -43,6 +44,7 @@ class RuleEngine @Inject constructor(
     private val treeProvider: WindowTreeProvider,
     private val executor: ActionExecutor,
     private val settingsRepository: SettingsRepository,
+    private val statsRepository: StatsRepository,
     dispatchers: AppDispatchers,
 ) {
 
@@ -92,6 +94,7 @@ class RuleEngine @Inject constructor(
         mechanism: String? = null,
         ok: Boolean,
         detail: String? = null,
+        durationMs: Long = 0,
         now: Long = System.currentTimeMillis(),
     ) {
         actionBuffer.addFirst(
@@ -102,6 +105,14 @@ class RuleEngine @Inject constructor(
             lastActionFlushAt = now
             _recentActions.value = actionBuffer.toList()
         }
+        statsRepository.record(
+            pkg = pkg,
+            ruleId = rule.id,
+            kind = kind.name,
+            ok = ok,
+            mechanism = mechanism,
+            durationMs = durationMs,
+        )
     }
 
     fun start() {
@@ -167,12 +178,14 @@ class RuleEngine @Inject constructor(
                 continue
             }
             ledger.markExecuted(rule.id, now)
+            val actionStartedAt = System.currentTimeMillis()
             val result = runCatching {
                 executor.execute(rule, target as? AndroidNodeView, tree.screenWidth, tree.screenHeight)
             }.getOrElse { t -> ActionExecutor.Result(false, "exception", reason = t.message) }
+            val durationMs = System.currentTimeMillis() - actionStartedAt
             actionSeq++
             actionCount.incrementAndGet()
-            appendAction(ActionRecord.Kind.ACTION, rule, pkg, result.mechanism, result.ok, result.reason)
+            appendAction(ActionRecord.Kind.ACTION, rule, pkg, result.mechanism, result.ok, result.reason, durationMs)
             Log.d(
                 TAG,
                 "action#$actionSeq rule=${rule.id} pkg=$pkg act=${rule.action} mech=${result.mechanism} " +
@@ -197,10 +210,19 @@ class RuleEngine @Inject constructor(
             val stillPresent = ClickVerifier.signature(freshTarget) == signature
             if (!ClickVerifier.shouldRetry(attemptsUsed = 1, maxAttempts = MAX_ATTEMPTS, nodeStillPresent = stillPresent)) return@launch
             ledger.markExecuted(rule.id, System.currentTimeMillis())
+            val retryStartedAt = System.currentTimeMillis()
             val result = executor.execute(rule, freshTarget as? AndroidNodeView, picked.tree.screenWidth, picked.tree.screenHeight)
             actionSeq++
             actionCount.incrementAndGet()
-            appendAction(ActionRecord.Kind.VERIFY_RETRY, rule, ledger.packageName, result.mechanism, result.ok, result.reason)
+            appendAction(
+                ActionRecord.Kind.VERIFY_RETRY,
+                rule,
+                ledger.packageName,
+                result.mechanism,
+                result.ok,
+                result.reason,
+                durationMs = System.currentTimeMillis() - retryStartedAt,
+            )
             Log.d(TAG, "verify-retry#$actionSeq rule=${rule.id} mech=${result.mechanism} ok=${result.ok}")
         }
     }

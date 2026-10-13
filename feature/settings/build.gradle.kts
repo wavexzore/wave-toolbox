@@ -37,9 +37,11 @@ dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:design"))
     implementation(project(":core:feature-api"))
+    implementation(project(":core:rules"))
     implementation(project(":core:selector"))
 
     implementation(platform(libs.compose.bom))
+    implementation(libs.androidx.core.ktx)
     implementation(libs.activity.compose)
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)

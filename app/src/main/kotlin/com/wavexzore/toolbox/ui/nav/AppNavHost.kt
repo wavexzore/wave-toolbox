@@ -7,11 +7,13 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.wavexzore.toolbox.feature.settings.DiagnosticsScreen
 import com.wavexzore.toolbox.feature.settings.EventLogScreen
 import com.wavexzore.toolbox.feature.settings.FeatureSettingsScreen
 import com.wavexzore.toolbox.feature.settings.SettingsScreen
 import com.wavexzore.toolbox.feature.settings.SetupGuideScreen
 import com.wavexzore.toolbox.feature.settings.SnapshotScreen
+import com.wavexzore.toolbox.feature.settings.StatsScreen
 import com.wavexzore.toolbox.ui.home.HomeScreen
 
 object Routes {
@@ -20,6 +22,8 @@ object Routes {
     const val EventLog = "event_log"
     const val SetupGuide = "setup_guide"
     const val Snapshot = "snapshot"
+    const val Stats = "stats"
+    const val Diagnostics = "diagnostics"
     const val Feature = "feature/{featureId}"
 
     fun feature(featureId: String): String = "feature/$featureId"
@@ -41,6 +45,8 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
                 onOpenEventLog = { navController.navigate(Routes.EventLog) },
                 onOpenSetupGuide = { navController.navigate(Routes.SetupGuide) },
                 onOpenSnapshot = { navController.navigate(Routes.Snapshot) },
+                onOpenStats = { navController.navigate(Routes.Stats) },
+                onOpenDiagnostics = { navController.navigate(Routes.Diagnostics) },
             )
         }
         composable(Routes.EventLog) {
@@ -51,6 +57,12 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
         }
         composable(Routes.Snapshot) {
             SnapshotScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Routes.Stats) {
+            StatsScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Routes.Diagnostics) {
+            DiagnosticsScreen(onBack = { navController.popBackStack() })
         }
         composable(
             route = Routes.Feature,
