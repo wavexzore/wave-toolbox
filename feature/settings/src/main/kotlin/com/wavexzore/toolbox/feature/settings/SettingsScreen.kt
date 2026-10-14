@@ -2,7 +2,9 @@ package com.wavexzore.toolbox.feature.settings
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -272,7 +275,18 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
             ) {
-                Text("wave工具箱 · 纯本地运行", fontSize = 12.sp, color = Wave.Ink3)
+                WaveBrandLockup(
+                    trailing = {
+                        Spacer(Modifier.width(10.dp))
+                        Box(
+                            modifier = Modifier
+                                .border(1.dp, Wave.LineStrong)
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                        ) {
+                            Text(viewModel.versionLabel, fontSize = 11.5.sp, color = Wave.Ink3)
+                        }
+                    },
+                )
             }
             Spacer(Modifier.height(24.dp))
         }

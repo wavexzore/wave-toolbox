@@ -1,6 +1,5 @@
 package com.wavexzore.toolbox.feature.settings
 
-import androidx.compose.foundation.background
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -60,10 +58,7 @@ fun SetupGuideScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(Modifier.size(7.dp).background(Wave.InkStrong))
-                Text("wave工具箱", fontSize = 12.5.sp, color = Wave.Ink3)
-            }
+            WaveBrandLockup(chipSize = 16.dp, titleSize = 12.5.sp, titleColor = Wave.Ink3)
             Text(
                 "三步完成设置",
                 fontFamily = FontFamily.Serif,
