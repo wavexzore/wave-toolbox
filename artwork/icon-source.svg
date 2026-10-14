@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 108 108">
+  <title>重制 A4 · W 独奏（家族曲线 W 放大，无波纹）</title>
+  <rect width="108" height="108" fill="#234F42"/>
+  <g transform="translate(54 55) scale(1.5) translate(-54 -43)"
+     fill="none" stroke="#D9EDAE" stroke-width="8"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 39 C36 39 34 54 43 54 C51 54 48 32 54 32 C60 32 57 54 65 54 C74 54 72 39 76 39"/>
+  </g>
+</svg>

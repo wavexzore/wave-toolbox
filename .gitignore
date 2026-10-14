@@ -7,8 +7,11 @@ third_party/
 # 真机走查截图
 .shots/
 
-# 文档（本地维护，不纳入 git）
+# 本地文档与 agent 配置（本地维护，不纳入 git）
 docs/
+AGENTS.md
+CLAUDE.md
+.claude/
 
 # macOS
 .DS_Store
@@ -22,3 +25,4 @@ local.properties
 *.iml
 captures/
 keystore.properties
+*.jks
