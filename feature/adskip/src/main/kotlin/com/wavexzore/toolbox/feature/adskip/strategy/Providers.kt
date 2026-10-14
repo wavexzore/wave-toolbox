@@ -10,13 +10,14 @@ class KeywordProvider : CandidateProvider {
 
     override suspend fun provide(ctx: ProviderContext): Candidate? {
         if (ctx.skipKeyword) return null
-        val pick = KeywordStrategy.pick(
+        // B-210：最优项被抑制时跳过并续取次优（而非整链放弃）——微信授权页「关闭=取消」
+        // 被抑制后继续点「允许」完成授权；小程序胶囊被抑制后仍可点页面上的「跳过」。
+        val pick = KeywordStrategy.pickAll(
             root = ctx.root,
             extraKeywords = ctx.extraKeywords,
             screenWidth = ctx.screenWidth,
             screenHeight = ctx.screenHeight,
-        ) ?: return null
-        if (NodeIdentity.of(pick.node) in ctx.suppressedIdentities) return null
+        ).firstOrNull { NodeIdentity.of(it.node) !in ctx.suppressedIdentities } ?: return null
         return Candidate(node = pick.node, position = null, source = "keyword:${pick.matched}")
     }
 }

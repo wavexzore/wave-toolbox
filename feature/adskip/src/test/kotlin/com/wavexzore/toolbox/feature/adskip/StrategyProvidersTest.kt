@@ -67,6 +67,25 @@ class StrategyProvidersTest {
         assertNull(KeywordProvider().provide(ctx(skipTree, suppressed = setOf(identity))))
     }
 
+    private val twoCandidateTree = """
+        { "class":"FrameLayout","bounds":[0,0,1080,2400],"children":[
+          {"text":"关闭","class":"TextView","clickable":true,"bounds":[60,60,200,120]},
+          {"text":"允许","class":"TextView","clickable":true,"bounds":[400,1500,700,1600]}]}
+    """.trimIndent()
+
+    @Test
+    fun keywordProviderSkipsSuppressedPickToNextCandidate() = runBlocking {
+        // B-210：最优项（顶部「关闭」）被抑制 → 续取次优「允许」，而非整链放弃。
+        val c0 = KeywordProvider().provide(ctx(twoCandidateTree, extraKeywords = listOf("允许")))!!
+        assertEquals("关闭", c0.node!!.text)
+        val suppressed = setOf(NodeIdentity.of(c0.node!!))
+        val c1 = KeywordProvider().provide(
+            ctx(twoCandidateTree, extraKeywords = listOf("允许"), suppressed = suppressed),
+        )!!
+        assertEquals("允许", c1.node!!.text)
+        assertEquals("keyword:允许", c1.source)
+    }
+
     @Test
     fun keywordProviderWorksWithGenericFallbackGroup() = runBlocking {
         // 未适配应用（组为空→兜底组）仍走 keyword 来源（D-223 回归锁定）

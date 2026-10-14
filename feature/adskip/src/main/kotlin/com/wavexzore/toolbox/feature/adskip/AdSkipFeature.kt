@@ -32,7 +32,7 @@ import com.wavexzore.toolbox.feature.adskip.profile.AdProfileFactory
 import com.wavexzore.toolbox.feature.adskip.profile.AppAdProfile
 import com.wavexzore.toolbox.feature.adskip.profile.PsyoneBrainmusicProfile
 import com.wavexzore.toolbox.feature.adskip.profile.SystemAdSolutionProfile
-import com.wavexzore.toolbox.feature.adskip.profile.WeChatProfile
+import com.wavexzore.toolbox.feature.adskip.profile.MiniProgramCapsuleProfile
 import com.wavexzore.toolbox.feature.adskip.profile.XiaomiMarketProfile
 import com.wavexzore.toolbox.feature.adskip.strategy.Candidate
 import com.wavexzore.toolbox.feature.adskip.strategy.CandidateProvider
@@ -71,6 +71,7 @@ import kotlinx.coroutines.launch
  * 基础设施（唯一事实源，`infra/`）：[WindowTracker] 窗口令牌、[PopupClassifier] 弹窗判别、
  * [AttemptScheduler] 预算/冷却/去重键、[SkipGate] 守卫、[OemQuirks] 厂商横切。
  * 策略层（`strategy/`）：[CandidateProvider] 链与候选身份（去 text）。
+ * 抑制（suppressOn）与手势策略按「树的归属方」解析（B-209：launcher/后台实例的跨包回退树防误点）。
  *
  * 预算不变式：单次事件最多 3 次尝试、间隔 200ms；`tree=null`/无候选不消耗预算（仅真实点击后计数）；
  * 心跳（T-203）：入口 5s 窗口内自 +500ms 起每 750ms 单次尝试一次，成功即止/实例更替即取消。
@@ -128,6 +129,13 @@ class AdSkipFeature @Inject constructor(
     /** 已见实例号（触发旧实例态清理/心跳）。 */
     private val seenInstances = ConcurrentHashMap<String, Long>()
 
+    /**
+     * 各包最近的真实 Activity 类名（仅 activity-like；B-209）。
+     * 抑制判定用它而非 mark.activity——后者会被 FrameLayout/动画窗口等框架标签覆盖，
+     * 小程序页/授权页在竞态与跨包回退尝试下会漏抑制。
+     */
+    private val lastRealActivity = ConcurrentHashMap<String, String>()
+
     @Volatile
     private var mode: String = AdSkipConfig.DEFAULT_MODE
 
@@ -177,6 +185,14 @@ class AdSkipFeature @Inject constructor(
     override fun onEvent(event: FeatureEvent) {
         _eventCount.value = _eventCount.value + 1
         val pkg = event.packageName ?: return
+
+        // B-209：先记录最近真实 Activity（含早退包）——跨包回退尝试与抑制判定依赖它；
+        // 仅采信 activity-like 类名，框架窗口标签（FrameLayout/动画窗）不进。
+        if (event.type == TYPE_WINDOW_STATE_CHANGED) {
+            val cls = event.className
+            if (looksLikeActivity(cls)) lastRealActivity[pkg] = cls!!
+            Log.d(TAG, "wsc-any pkg=$pkg cls=$cls")
+        }
 
         // 令牌卫生（B-205）：自身包/三态 OFF 包/系统选择器都在下方早退，但它们进入前台
         // 同样是跨包边界——不记录则从这些中间态返回任一 App 时，onForeground 会误判
@@ -360,31 +376,42 @@ class AdSkipFeature @Inject constructor(
         val zoneGroups = active.filter { ZoneGate.allows(it, popupContext, mark.activity, mark.activityAt, now) }
         if (zoneGroups.isEmpty()) return null
 
+        // 抑制/手势按「树的归属方」解析（B-209）：launcher 回退树、后台实例跨包回退、跨应用授权
+        // 弹层等场景尝试方 pkg ≠ 树归属 pkg——按尝试方取用会把小程序/授权页「关闭」当跳过点掉。
+        // 页面标签取归属包最近真实 Activity（mark.activity 会被 FrameLayout 等框架标签覆盖）。
         val profile = profileFactory.profile(pkg)
-        val suppressed = profile.suppressOn(mark.activity)
+        val ownerPkg = picked.rootPkg?.takeIf { it != pkg }
+        val policy = ownerPkg?.let { profileFactory.profile(it) } ?: profile
+        val suppressActivity = if (ownerPkg != null) {
+            lastRealActivity[ownerPkg] ?: tracker.current(ownerPkg)?.activity
+        } else {
+            lastRealActivity[pkg] ?: mark.activity
+        }
+        val suppressed = policy.suppressOn(suppressActivity)
             .flatMap { selector -> selectorEngine.findAll(tree.root, selector) }
             .map { NodeIdentity.of(it.node) }
             .toSet()
+        Log.d(TAG, "suppress-check pkg=$pkg owner=${ownerPkg ?: pkg} act=$suppressActivity n=${suppressed.size}")
         val ctx = ProviderContext(
             pkg = pkg,
             root = tree.root,
             screenWidth = tree.screenWidth,
             screenHeight = tree.screenHeight,
             groups = zoneGroups,
-            profile = profile,
+            profile = policy,
             activity = mark.activity,
-            extraKeywords = extraKeywords + profile.keywordExtra() + zoneGroups.flatMap { it.keywords },
+            extraKeywords = extraKeywords + policy.keywordExtra() + zoneGroups.flatMap { it.keywords },
             suppressedIdentities = suppressed,
             skipKeyword = popupContext || zoneGroups.any { it.suppressGeneric },
             selectorEngine = selectorEngine,
             scheduler = scheduler,
         )
 
-        for (provider in resolveProviders(profile.providerOrder())) {
+        for (provider in resolveProviders(policy.providerOrder())) {
             val candidate = provider.provide(ctx) ?: continue
             val identity = candidate.node?.let { NodeIdentity.of(it) }
             if (identity != null && scheduler.identityCount(instanceKey, identity) >= IDENTITY_CLICK_LIMIT) continue
-            val result = execute(candidate, tree, profile.forceGesture())
+            val result = execute(candidate, tree, policy.forceGesture())
             candidate.groupId?.let { scheduler.recordGroupAction(pkg, it) }
             if (identity != null) {
                 scheduler.recordIdentity(instanceKey, identity)
@@ -618,10 +645,10 @@ abstract class AdSkipModule {
     @IntoSet
     abstract fun bindXiaomiMarketProfile(profile: XiaomiMarketProfile): AppAdProfile
 
-    /** 微信（B-206 续：小程序页抑制「关闭」胶囊，防被当跳过点掉）。 */
+    /** 小程序胶囊/授权页「关闭」抑制（B-207→B-209：微信/支付宝/QQ 小程序容器 + 微信授权页）。 */
     @Binds
     @IntoSet
-    abstract fun bindWeChatProfile(profile: WeChatProfile): AppAdProfile
+    abstract fun bindMiniProgramCapsuleProfile(profile: MiniProgramCapsuleProfile): AppAdProfile
 
     /** MSA 开屏（B-206 续：跳过补点 + 强制手势，修入场吞点击）。 */
     @Binds

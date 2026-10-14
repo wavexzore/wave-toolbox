@@ -66,16 +66,28 @@ class ProfileAndAssetsTest {
     }
 
     @Test
-    fun weChatProfileSuppressesMiniProgramCapsuleOnly() {
-        // B-206 续：小程序页抑制「关闭」胶囊（否则通用关键词会把小程序点退出）；其他微信页面不抑制。
-        val profile = com.wavexzore.toolbox.feature.adskip.profile.WeChatProfile()
-        assertEquals(setOf("com.tencent.mm"), profile.pkgs)
+    fun miniProgramProfileSuppressesCapsuleOnContainerPagesOnly() {
+        // B-207/B-209：小程序容器页与微信授权页抑制「关闭」胶囊；普通页不抑制。
+        val profile = com.wavexzore.toolbox.feature.adskip.profile.MiniProgramCapsuleProfile()
         assertEquals(
-            listOf("""[text="关闭"]""", """[desc="关闭"]"""),
-            profile.suppressOn("com.tencent.mm.plugin.appbrand.ui.AppBrandUI00"),
+            setOf("com.tencent.mm", "com.eg.android.AlipayGphone", "com.tencent.mobileqq"),
+            profile.pkgs,
         )
+        val capsule = listOf("""[text*="关闭"]""", """[desc*="关闭"]""")
+        assertEquals(capsule, profile.suppressOn("com.tencent.mm.plugin.appbrand.ui.AppBrandUI00"))
+        assertEquals(capsule, profile.suppressOn("com.tencent.mm.plugin.appbrand.launching.AppBrandLaunchProxyUI"))
+        assertEquals(capsule, profile.suppressOn("com.tencent.mobileqq.mini.appbrand.ui.AppBrandUI3"))
+        assertEquals(
+            capsule,
+            profile.suppressOn("com.tencent.luggage.wxa.standalone_open_runtime.container.WxaContainerMultiTaskActivity0"),
+        )
+        assertEquals(capsule, profile.suppressOn("com.tencent.widget.loading.QUILoadingDialog"))
+        assertEquals(capsule, profile.suppressOn("com.alipay.mobile.nebulax.xriver.activity.XRiverActivity\$App01"))
+        assertEquals(capsule, profile.suppressOn("com.alipay.mobile.nebulax.xriver.activity.XRiverLoadingActivity"))
+        assertEquals(capsule, profile.suppressOn("com.tencent.mm.plugin.webview.ui.tools.SDKOAuthUI"))
         assertTrue(profile.suppressOn("com.tencent.mm.ui.LauncherUI").isEmpty())
         assertTrue(profile.suppressOn(null).isEmpty())
+        assertEquals(listOf("允许", "同意"), profile.keywordExtra())
         assertFalse(profile.forceGesture())
     }
 

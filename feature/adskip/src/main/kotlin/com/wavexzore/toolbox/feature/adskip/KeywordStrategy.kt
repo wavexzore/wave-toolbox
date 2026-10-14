@@ -52,11 +52,23 @@ object KeywordStrategy {
         excludes: List<String> = DEFAULT_EXCLUDES,
         screenWidth: Int,
         screenHeight: Int,
-    ): Pick? {
+    ): Pick? = pickAll(root, extraKeywords, excludes, screenWidth, screenHeight).firstOrNull()
+
+    /**
+     * 按同口径返回**全部**候选（B-210）：供 Provider 在被抑制项上跳过而非整链放弃
+     * （授权页「关闭(取消)」被抑制后应继续取「允许」；小程序胶囊被抑制后仍可点页面「跳过」）。
+     */
+    fun pickAll(
+        root: NodeView,
+        extraKeywords: List<String> = emptyList(),
+        excludes: List<String> = DEFAULT_EXCLUDES,
+        screenWidth: Int,
+        screenHeight: Int,
+    ): List<Pick> {
         val keywords = DEFAULT_KEYWORDS + extraKeywords
         val candidates = ArrayList<Pick>(8)
         collect(root, keywords, excludes, screenWidth, screenHeight, candidates)
-        return bestOf(candidates, screenHeight)
+        return candidates.sortedWith(comparator(screenHeight))
     }
 
     /** 候选择优（供 `matches` 选择器结果与关键词结果共用的排序口径）。 */
