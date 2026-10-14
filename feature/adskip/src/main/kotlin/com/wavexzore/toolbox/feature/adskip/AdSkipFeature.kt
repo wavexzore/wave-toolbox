@@ -178,6 +178,13 @@ class AdSkipFeature @Inject constructor(
         val runMode = pkgMode(pkg)
         if (runMode == PkgMode.OFF) return
 
+        // 系统选择器豁免（D-226）：分享/「打开方式」面板不是广告——原会被当作
+        // 新开屏窗口，由通用兜底以关键词「关闭」点到面板 × 而秒关（实测 0.6s）。
+        if (SystemPicker.exempt(pkg)) {
+            Log.d(TAG, "picker-exempt pkg=$pkg type=${event.type}")
+            return
+        }
+
         // 误操作修复（2026-10-14）：包进入前台 = 新开屏窗口；非前台不点
         val foreground = treeProvider.isAppForeground(pkg)
 
