@@ -68,6 +68,14 @@ class StrategyProvidersTest {
     }
 
     @Test
+    fun keywordProviderWorksWithGenericFallbackGroup() = runBlocking {
+        // 未适配应用（组为空→兜底组）仍走 keyword 来源（D-223 回归锁定）
+        val c = KeywordProvider().provide(ctx(skipTree, groups = listOf(GroupFallback.generic)))
+        assertNotNull(c)
+        assertTrue(c.source.startsWith("keyword:"))
+    }
+
+    @Test
     fun matchProviderPicksGlobalBestAcrossGroups() = runBlocking {
         val tree = """
             { "class":"FrameLayout","bounds":[0,0,1080,2400],"children":[

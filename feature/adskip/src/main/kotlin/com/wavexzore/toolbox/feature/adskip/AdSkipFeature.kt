@@ -182,11 +182,12 @@ class AdSkipFeature @Inject constructor(
         val foreground = treeProvider.isAppForeground(pkg)
 
         if (event.type == TYPE_WINDOW_STATE_CHANGED && foreground) {
+            val wb = treeProvider.focusedWindowBounds(pkg)
             Log.d(
                 TAG,
                 "wsc pkg=$pkg cls=${event.className} text=${event.text} " +
                     "winPopup=${classifier.isPopupWindow(pkg)} clsPopup=${classifier.isPopupWindowClass(event.className)} " +
-                    "noise=${quirks.matchesNoiseClass(event.className)}",
+                    "noise=${quirks.matchesNoiseClass(event.className)} win=${wb?.let { "${it.left},${it.top},${it.right},${it.bottom}" }}",
             )
         }
 
@@ -264,6 +265,7 @@ class AdSkipFeature @Inject constructor(
     }
 
     private fun groupMax(pkg: String, mark: WindowTracker.Mark, runMode: String): Int {
+        // 未适配应用（组为空→GroupFallback 兜底）不走 maxOf：预算沿用模式默认（v1 等价），见 GroupFallback 注释
         val groups = profileFactory.mergedGroups(pkg).filter { GroupGating.active(it, runMode, mark.activity) }
         return groups.maxOfOrNull { it.actionMaximum } ?: if (runMode == AdSkipGroup.MODE_ANY) 2 else 1
     }
@@ -307,14 +309,20 @@ class AdSkipFeature @Inject constructor(
 
     private suspend fun tryOnce(pkg: String, mark: WindowTracker.Mark, runMode: String): Outcome? {
         val instanceKey = tracker.instanceKey(pkg, mark)
-        val active = profileFactory.mergedGroups(pkg).filter { GroupGating.active(it, runMode, mark.activity) }
+        val mergedActive = profileFactory.mergedGroups(pkg).filter { GroupGating.active(it, runMode, mark.activity) }
+        if (mergedActive.isEmpty() && scheduler.oncePopup("$pkg#${mark.instance}:fallback")) {
+            Log.d(TAG, "fallback-enter pkg=$pkg act=${mark.activity}")
+        }
+        val active = GroupFallback.resolve(mergedActive)
 
         // 保守模式（仅开屏）：弹窗窗口默认不碰（F1）——仅显式 popupAware/zone=popup 组参与（D-205）
         val popupReason = gate.blockReason(pkg, mark.activity, runMode)
         val popupContext = popupReason != null
         if (popupContext && active.none { it.popupAware == true || it.effectiveZone == AdSkipGroup.ZONE_POPUP }) {
             if (scheduler.oncePopup("$pkg#${mark.instance}")) {
-                Log.d(TAG, "popup-skip pkg=$pkg cls=${mark.activity} ($popupReason)")
+                val wb = treeProvider.focusedWindowBounds(pkg)
+                val dm = context.resources.displayMetrics
+                Log.d(TAG, "popup-skip pkg=$pkg cls=${mark.activity} ($popupReason) win=${wb?.let { "${it.left},${it.top},${it.right},${it.bottom}" }} screen=${dm.widthPixels}x${dm.heightPixels}")
             }
             return null
         }
