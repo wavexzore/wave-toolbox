@@ -14,12 +14,15 @@ import com.wavexzore.toolbox.core.data.stats.StatsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 
 data class SettingsUiState(
@@ -56,7 +59,10 @@ class SettingsViewModel @Inject constructor(
     private val _healStatus = MutableStateFlow<String?>(null)
     val healStatus: StateFlow<String?> = _healStatus
 
-    /** 自愈行状态（授权 × 服务连接 × 引擎开关；2s 轮询，adb 授权后可自动反映）。 */
+    /**
+     * 自愈行状态（授权 × 服务连接 × 引擎开关；2s 轮询，adb 授权后可自动反映）。
+     * 经 [graceNeeds] 去抖：瞬断（系统抑制/uiautomator 探针等 1s 级自恢复）不闪「需要修复」也不触发重绑。
+     */
     val selfHealState: StateFlow<SelfHealState> = combine(
         selfHeal.status,
         accessibilityEnabled,
@@ -66,7 +72,7 @@ class SettingsViewModel @Inject constructor(
             !enabled || !status.connected -> SelfHealState.NEEDS_REPAIR
             else -> SelfHealState.OK
         }
-    }.stateIn(
+    }.graceNeeds(NEEDS_GRACE_MS).stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
         if (selfHeal.isGranted()) SelfHealState.NEEDS_REPAIR else SelfHealState.UNAUTHORIZED,
@@ -185,5 +191,19 @@ class SettingsViewModel @Inject constructor(
 
         /** 自动重试失败后的收敛间隔。 */
         const val AUTO_RETRY_DELAY_MS = 5_000L
+
+        /** NEEDS 去抖窗口：大于 1 个状态轮询周期，吸收 uiautomator 探针/系统抑制导致的 1s 级瞬断。 */
+        const val NEEDS_GRACE_MS = 3_000L
     }
 }
+
+/**
+ * NEEDS 去抖：瞬断在 [graceMs] 内自恢复则不外显「需要修复」（也不触发重绑）；
+ * 恢复到非 NEEDS 即时透传并取消挂起。
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+internal fun Flow<SelfHealState>.graceNeeds(graceMs: Long): Flow<SelfHealState> =
+    transformLatest { state ->
+        if (state == SelfHealState.NEEDS_REPAIR) delay(graceMs)
+        emit(state)
+    }

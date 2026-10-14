@@ -23,6 +23,10 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 kotlin {
@@ -53,4 +57,7 @@ dependencies {
     implementation(libs.hilt.android)
     implementation(libs.hilt.lifecycle.viewmodel.compose)
     ksp(libs.hilt.compiler)
+
+    testImplementation(kotlin("test"))
+    testImplementation(libs.kotlinx.coroutines.test)
 }
