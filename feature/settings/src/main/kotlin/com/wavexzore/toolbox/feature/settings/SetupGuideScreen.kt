@@ -2,6 +2,7 @@ package com.wavexzore.toolbox.feature.settings
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -159,6 +160,20 @@ fun SetupGuideScreen(
                 },
             )
             WaveGhostButton("稍后再说 · 先逛逛", onBack)
+
+            // 深底字标段（字标 V1 深底态：纸白文字、图形不变，lime 点题——设计规范见 docs/design/app-icon）
+            Spacer(Modifier.height(26.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Wave.Deep)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+            ) {
+                WaveBrandLockup(chipSize = 18.dp, titleSize = 14.sp, titleColor = Wave.Bg)
+                Spacer(Modifier.height(5.dp))
+                Text("轻量 · 纯本地 · 无联网", fontSize = 11.5.sp, color = Wave.Lime)
+            }
+
             Spacer(Modifier.height(24.dp))
         }
     }
