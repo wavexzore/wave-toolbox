@@ -73,6 +73,7 @@ class SettingsViewModel @Inject constructor(
     )
 
     private var autoHealing = false
+    private var autoRetryQueued = false
 
     init {
         // 进入「需要修复」且已授权 → 自动重试（重装/被回收/授权后自愈；失败每 5s 收敛重试）
@@ -84,8 +85,13 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun maybeAutoHeal() {
-        if (autoHealing) return
+        // 执行中再次触发 → 排队，结束后补一次（避免守卫期状态变化丢失重试）
+        if (autoHealing) {
+            autoRetryQueued = true
+            return
+        }
         autoHealing = true
+        autoRetryQueued = false
         viewModelScope.launch {
             val retryNeeded = try {
                 val result = selfHeal.heal()
@@ -94,11 +100,11 @@ class SettingsViewModel @Inject constructor(
                     _healStatus.value = "已自动修复 · 已重新绑定"
                 }
                 delay(AUTO_RETRY_DELAY_MS)
-                selfHealState.value == SelfHealState.NEEDS_REPAIR && selfHeal.isGranted()
+                selfHeal.isGranted() && selfHealState.value != SelfHealState.OK
             } finally {
                 autoHealing = false
             }
-            if (retryNeeded) maybeAutoHeal()
+            if (retryNeeded || autoRetryQueued) maybeAutoHeal()
         }
     }
 
