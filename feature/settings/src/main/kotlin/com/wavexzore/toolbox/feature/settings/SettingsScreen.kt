@@ -111,21 +111,6 @@ fun SettingsScreen(
                     if (accessibilityEnabled) {
                         WavePill("已开启", WaveTone.Green)
                     } else {
-                        WavePill("未开启", WaveTone.Red)
-                    }
-                }
-                if (!accessibilityEnabled) {
-                    WaveDivider(modifier = Modifier.padding(top = 12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "未开启时无法读取屏幕",
-                            fontSize = 12.sp,
-                            color = Wave.Ink3,
-                            modifier = Modifier.weight(1f),
-                        )
                         WaveTextAction("去开启 ›", viewModel::openAccessibilitySettings)
                     }
                 }
