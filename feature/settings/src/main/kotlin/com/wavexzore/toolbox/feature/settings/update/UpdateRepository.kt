@@ -109,6 +109,7 @@ class UpdateRepository @Inject constructor(
             if (last <= now && now - last < UpdateConfig.THROTTLE_MS) return
         }
         mutex.withLock { _state.value = UpdateState.Checking }
+        Log.i(TAG, "check start force=$force")
         val result = http.getText(UpdateConfig.API_LATEST_URL)
         runCatching { prefs.setLastCheckAt(clock.nowMs()) }
             .onFailure { Log.w(TAG, "lastCheckAt write failed", it) }
@@ -117,6 +118,7 @@ class UpdateRepository @Inject constructor(
                 val info = ReleaseParser.parse(result.text)
                 if (info == null) {
                     mutex.withLock { _state.value = UpdateState.Error(ErrorKind.Parse) }
+                    Log.i(TAG, "check done: ${stateSummary()}")
                     return
                 }
                 val skipped = prefs.skippedTag.first()
@@ -140,6 +142,7 @@ class UpdateRepository @Inject constructor(
             }
             is HttpText.IoError -> mutex.withLock { _state.value = UpdateState.Error(mapIo(result.kind)) }
         }
+        Log.i(TAG, "check done: ${stateSummary()}")
     }
 
     /** Downloaded 时的检查：file 在 → 保持（同版本/非成功请求）/异版本更新 → Available；file 失 → 常规语义。 */
@@ -151,8 +154,14 @@ class UpdateRepository @Inject constructor(
         val result = http.getText(UpdateConfig.API_LATEST_URL)
         runCatching { prefs.setLastCheckAt(clock.nowMs()) }
             .onFailure { Log.w(TAG, "lastCheckAt write failed", it) }
-        if (result !is HttpText.Ok) return // 404/失败：保持 Downloaded（file 在）
-        val info = ReleaseParser.parse(result.text) ?: return // parse 失败：保持
+        if (result !is HttpText.Ok) {
+            Log.i(TAG, "check(downloaded) kept: ${stateSummary()}")
+            return // 404/失败：保持 Downloaded（file 在）
+        }
+        val info = ReleaseParser.parse(result.text) ?: run {
+            Log.i(TAG, "check(downloaded) parse-fail kept: ${stateSummary()}")
+            return
+        }
         val baseline = current.info?.tag ?: current.apkVersionName
         when {
             sameVersion(info.tag, baseline) -> mutex.withLock {
@@ -192,6 +201,7 @@ class UpdateRepository @Inject constructor(
                 dir.listFiles { f -> f.isFile }?.forEach { it.delete() }
                 val target = File(dir, UpdateConfig.sanitizeForFileName(plan.asset.name))
                 mutex.withLock { _state.value = UpdateState.Downloading(plan.info, 0, 0, plan.asset.size) }
+                Log.i(TAG, "download start tag=${plan.info.tag} size=${plan.asset.size} digest=${plan.asset.digest != null}")
 
                 val result = http.downloadTo(plan.asset.url, target) { bytes, total ->
                     val current = _state.value
