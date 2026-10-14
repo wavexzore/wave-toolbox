@@ -85,10 +85,15 @@ class AttemptScheduler(
         identityClicks.remove("$instanceKey|$identity")
     }
 
-    /** 复核失败（点击后节点仍在且未变）→ 回退一次成功记账，允许重试；同时放开控件次数。 */
-    fun onVerifyFailed(instanceKey: String, identity: String) {
+    /**
+     * 复核失败（点击后节点仍在且未变）→ 回退一次成功记账，允许重试；同时放开控件次数，
+     * 并把「上次点击」回拨使 [retryAfterMs] 后即可再次进入——无效点击不应烧满冷却
+     * （MSA 开屏入场吞点击场景需快速补点）；[clickCooldownMs] 与 tryEnter 调用保持一致。
+     */
+    fun onVerifyFailed(pkg: String, instanceKey: String, identity: String, clickCooldownMs: Long, retryAfterMs: Long) {
         perInstanceCount.compute(instanceKey) { _, v -> ((v ?: 1) - 1).coerceAtLeast(0) }
         clearIdentity(instanceKey, identity)
+        lastClickAt[pkg] = clock() - clickCooldownMs + retryAfterMs
     }
 
     /** 保留同包当前实例键，清理旧实例（防 map 长跑膨胀）。 */

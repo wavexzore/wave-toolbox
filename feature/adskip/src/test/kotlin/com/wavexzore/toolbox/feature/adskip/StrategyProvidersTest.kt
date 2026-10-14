@@ -147,12 +147,26 @@ class StrategyProvidersTest {
         assertEquals(2, s.identityCount("p#1", "id"))
         s.onOutcome("p#1", ok = true)
         assertEquals(1, s.successCount("p#1"))
-        s.onVerifyFailed("p#1", "id")
+        s.onVerifyFailed("p", "p#1", "id", clickCooldownMs = 1_200, retryAfterMs = 350)
         assertEquals(0, s.successCount("p#1")) // 成功记账回退
         assertEquals(0, s.identityCount("p#1", "id")) // 去重放开
         s.recordIdentity("p#2", "id2")
         s.retainOnly("p", "p#2")
         assertEquals(1, s.identityCount("p#2", "id2")) // 当前实例键保留
         assertEquals(0, s.identityCount("p#1", "id")) // 旧实例键清理
+    }
+
+    @Test
+    fun verifyFailedRelaxesClickCooldown() {
+        // B-206 续：复核失败=无效点击，不应烧满点击冷却——回拨后按 retryAfter 允许补点。
+        var now = 1_000L
+        val s = AttemptScheduler { now }
+        s.recordClick("p")
+        now = 1_500
+        assertFalse(s.tryEnter("p", "k", 1_200, 0)) // 冷却内
+        s.onVerifyFailed("p", "k", "id", clickCooldownMs = 1_200, retryAfterMs = 350)
+        now = 1_900 // 回拨至 1500-1200+350=650 → 1850 起允许补点
+        assertTrue(s.tryEnter("p", "k", 1_200, 0))
+        s.leave("k")
     }
 }

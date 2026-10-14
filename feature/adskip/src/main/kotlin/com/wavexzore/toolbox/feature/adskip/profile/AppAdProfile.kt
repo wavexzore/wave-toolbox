@@ -39,6 +39,14 @@ interface AppAdProfile {
      * （如应用商店互动开屏/广告落地页）——「适配过的应用才启用应用内增强」。
      */
     fun inAppWindowRefresh(): Boolean = false
+
+    /**
+     * 强制手势点击（B-206 续）：true 时点击统一走坐标手势（跳过 performAction）。
+     *
+     * 用途：performAction 派发对特定表面不生效（MSA 开屏跳过按钮实测：连续
+     * performAction 均返回 true 但页面无反应）——真实触摸等价用户操作。
+     */
+    fun forceGesture(): Boolean = false
 }
 
 /** 区域策略（最小集；缺省允许 entry 与声明区域）。 */

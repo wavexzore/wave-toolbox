@@ -31,6 +31,8 @@ import com.wavexzore.toolbox.feature.adskip.infra.WindowTracker
 import com.wavexzore.toolbox.feature.adskip.profile.AdProfileFactory
 import com.wavexzore.toolbox.feature.adskip.profile.AppAdProfile
 import com.wavexzore.toolbox.feature.adskip.profile.PsyoneBrainmusicProfile
+import com.wavexzore.toolbox.feature.adskip.profile.SystemAdSolutionProfile
+import com.wavexzore.toolbox.feature.adskip.profile.WeChatProfile
 import com.wavexzore.toolbox.feature.adskip.profile.XiaomiMarketProfile
 import com.wavexzore.toolbox.feature.adskip.strategy.Candidate
 import com.wavexzore.toolbox.feature.adskip.strategy.CandidateProvider
@@ -382,7 +384,7 @@ class AdSkipFeature @Inject constructor(
             val candidate = provider.provide(ctx) ?: continue
             val identity = candidate.node?.let { NodeIdentity.of(it) }
             if (identity != null && scheduler.identityCount(instanceKey, identity) >= IDENTITY_CLICK_LIMIT) continue
-            val result = execute(candidate, tree)
+            val result = execute(candidate, tree, profile.forceGesture())
             candidate.groupId?.let { scheduler.recordGroupAction(pkg, it) }
             if (identity != null) {
                 scheduler.recordIdentity(instanceKey, identity)
@@ -407,7 +409,7 @@ class AdSkipFeature @Inject constructor(
     private fun resolveProviders(order: List<String>?): List<CandidateProvider> =
         (order ?: DEFAULT_PROVIDER_ORDER).mapNotNull { providerById[it] }
 
-    private suspend fun execute(candidate: Candidate, tree: NodeAdapter.Tree): ActionExecutor.Result {
+    private suspend fun execute(candidate: Candidate, tree: NodeAdapter.Tree, forceGesture: Boolean = false): ActionExecutor.Result {
         val position = candidate.position
         if (position != null) {
             val rule = RawRule(
@@ -423,6 +425,15 @@ class AdSkipFeature @Inject constructor(
             return executor.execute(rule, null, tree.screenWidth, tree.screenHeight)
         }
         val node = candidate.node ?: return ActionExecutor.Result(ok = false, mechanism = "none")
+        if (forceGesture) {
+            // 强制手势（B-206 续）：跳过 performAction，直接坐标触摸（等价用户点击）
+            return executor.execute(
+                RawRule(id = "adskip@click", action = RuleAction.CLICK_CENTER),
+                node as? AndroidNodeView,
+                tree.screenWidth,
+                tree.screenHeight,
+            )
+        }
         return click(node, tree.screenWidth, tree.screenHeight)
     }
 
@@ -445,7 +456,7 @@ class AdSkipFeature @Inject constructor(
             val stillPresent = ClickVerifier.signature(found) == signature
             if (!stillPresent) return@launch
             if (ClickVerifier.shouldRetry(scheduler.successCount(instanceKey), groupMax(pkg, current, runMode) + 1, nodeStillPresent = true)) {
-                scheduler.onVerifyFailed(instanceKey, identity)
+                scheduler.onVerifyFailed(pkg, instanceKey, identity, CLICK_COOLDOWN_MS, VERIFY_RETRY_AFTER_MS)
                 Log.d(TAG, "verify-retry pkg=$pkg key=$instanceKey identity=$identity")
             } else {
                 Log.d(TAG, "verify-still-present pkg=$pkg key=$instanceKey identity=$identity")
@@ -555,6 +566,9 @@ class AdSkipFeature @Inject constructor(
         /** 同 App 连续点击最小间隔。 */
         const val CLICK_COOLDOWN_MS = 1_200L
 
+        /** 复核失败后的补点等待（B-206 续）：无效点击不烧满冷却，短延时后允许补点。 */
+        const val VERIFY_RETRY_AFTER_MS = 350L
+
         /** 同实例两次尝试的最小间隔（防事件风暴连点）。 */
         const val ATTEMPT_GAP_MS = 500L
 
@@ -603,6 +617,16 @@ abstract class AdSkipModule {
     @Binds
     @IntoSet
     abstract fun bindXiaomiMarketProfile(profile: XiaomiMarketProfile): AppAdProfile
+
+    /** 微信（B-206 续：小程序页抑制「关闭」胶囊，防被当跳过点掉）。 */
+    @Binds
+    @IntoSet
+    abstract fun bindWeChatProfile(profile: WeChatProfile): AppAdProfile
+
+    /** MSA 开屏（B-206 续：跳过补点 + 强制手势，修入场吞点击）。 */
+    @Binds
+    @IntoSet
+    abstract fun bindSystemAdSolutionProfile(profile: SystemAdSolutionProfile): AppAdProfile
 }
 
 /**

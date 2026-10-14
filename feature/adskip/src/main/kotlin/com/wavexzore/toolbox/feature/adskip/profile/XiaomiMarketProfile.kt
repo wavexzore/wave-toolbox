@@ -1,7 +1,6 @@
 package com.wavexzore.toolbox.feature.adskip.profile
 
 import com.wavexzore.toolbox.feature.adskip.AdSkipGroup
-import com.wavexzore.toolbox.feature.adskip.AdSkipPosition
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,10 +15,10 @@ import javax.inject.Singleton
  * 实测（a077bc70 / market 4.126.10，2026-10-14）：OrchardActivity 于进入前台 87s 后出现时
  * 引擎零尝试；页面内 `关闭` 为 Button(text=关闭, clickable=true)，通用兜底可直接命中。
  *
- * 退出策略（同次实测）：该页两个「关闭」按钮为 **height=0 幽灵节点**，performAction 返回 true
- * 但不关页（仅关任务小弹窗）；真正退页入口是左上角**无文本/无 desc 的返回 Button**
- * （bounds [78,129][183,231]，通用关键词够不到）→ 声明 activityIds 限定的 position 组盲点该处，
- * 并抑制幽灵「关闭」防止通用关键词抢先消耗单实例预算。
+ * 调账（2026-10-14 二次，用户反馈「种果树每次进入都会被自动退出」）：该页两个「关闭」为
+ * **height=0 幽灵节点**（performAction 返回 true 但不关页，仅关任务小弹窗）→ 抑制之防误点；
+ * 且该机版本种果树**从不自动打开**（恒为手动进入）→ 摘除原 position 退出组，
+ * 进入后停留（想玩即玩，需手动返回）。
  */
 @Singleton
 class XiaomiMarketProfile @Inject constructor() : AppAdProfile {
@@ -28,7 +27,7 @@ class XiaomiMarketProfile @Inject constructor() : AppAdProfile {
 
     override fun inAppWindowRefresh(): Boolean = true
 
-    /** 种果树页：抑制两个幽灵「关闭」（text/desc 各一），让位给 position 退出。 */
+    /** 种果树页：抑制两个幽灵「关闭」（text/desc 各一），防误点消耗单实例预算。 */
     override fun suppressOn(activity: String?): List<String> =
         if (activity?.contains(ORCHARD_ACTIVITY) == true) {
             listOf("""[text="关闭"]""", """[desc="关闭"]""")
@@ -36,18 +35,12 @@ class XiaomiMarketProfile @Inject constructor() : AppAdProfile {
             emptyList()
         }
 
-    /** 种果树页退出组：仅该 Activity 生效；position 盲点左上返回箭头（10.8% / 6.9%）。
-     *  actionMaximum=3：页面初始化前 1~2s 会吞点击（实测），靠心跳按 1.2s 冷却节拍补点；
-     *  实例更替（退页成功）后旧心跳自停，不会误点首页。 */
-    override fun groups(): List<AdSkipGroup> = listOf(
-        AdSkipGroup(
-            id = ORCHARD_EXIT_GROUP,
-            name = "种果树开屏退出",
-            activityIds = listOf(ORCHARD_ACTIVITY),
-            position = AdSkipPosition(xPercent = 10.8f, yPercent = 6.9f),
-            actionMaximum = 3,
-        ),
-    )
+    /**
+     * 2026-10-14 调账：不再声明种果树退出组（见类注释）。
+     * 如需恢复自动退出：加入 activityIds=[ORCHARD_ACTIVITY] 的 position 组（10.8% / 6.9%，
+     * actionMaximum=3 冷却补点）即可，组 id 沿用 [ORCHARD_EXIT_GROUP]。
+     */
+    override fun groups(): List<AdSkipGroup> = emptyList()
 
     companion object {
         const val PKG = "com.xiaomi.market"

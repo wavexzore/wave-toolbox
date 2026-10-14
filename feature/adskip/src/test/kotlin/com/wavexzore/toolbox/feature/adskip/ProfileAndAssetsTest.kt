@@ -45,16 +45,12 @@ class ProfileAndAssetsTest {
     }
 
     @Test
-    fun xiaomiMarketOrchardExitGroupIsScopedAndSuppressesGhostClose() {
-        // B-205：种果树页退出组仅在该 Activity 生效；幽灵「关闭」只在该页抑制。
+    fun xiaomiMarketOrchardStaysAndSuppressesGhostClose() {
+        // B-206 调账（2026-10-14 二次）：种果树不再自动退出（该机恒手动进入，用户反馈）——
+        // 退出组摘除；幽灵「关闭」仍抑制；应用内窗口刷新保持启用。
         val profile = com.wavexzore.toolbox.feature.adskip.profile.XiaomiMarketProfile()
-        val group = profile.groups().first { it.id == "com.xiaomi.market#orchard-exit" }
-        assertEquals(listOf("com.xiaomi.orchard.sdk.ui.OrchardActivity"), group.activityIds)
-        assertEquals(10.8f, group.position?.xPercent)
-        assertEquals(6.9f, group.position?.yPercent)
-        assertEquals(3, group.actionMaximum)
-        assertTrue(GroupGating.active(group, AdSkipGroup.MODE_SPLASH, "com.xiaomi.orchard.sdk.ui.OrchardActivity"))
-        assertFalse(GroupGating.active(group, AdSkipGroup.MODE_SPLASH, "com.xiaomi.market.business_ui.main.MarketTabActivity"))
+        assertTrue(profile.groups().isEmpty())
+        assertTrue(profile.inAppWindowRefresh())
         assertEquals(
             listOf("""[text="关闭"]""", """[desc="关闭"]"""),
             profile.suppressOn("com.xiaomi.orchard.sdk.ui.OrchardActivity"),
@@ -67,5 +63,33 @@ class ProfileAndAssetsTest {
     fun builtinDemoRuleDisabled() {
         val text = File("../../core/rules/src/main/assets/rules/builtin/com.tencent.mm.json5").readText()
         assertTrue(text.contains("enabled: false"))
+    }
+
+    @Test
+    fun weChatProfileSuppressesMiniProgramCapsuleOnly() {
+        // B-206 续：小程序页抑制「关闭」胶囊（否则通用关键词会把小程序点退出）；其他微信页面不抑制。
+        val profile = com.wavexzore.toolbox.feature.adskip.profile.WeChatProfile()
+        assertEquals(setOf("com.tencent.mm"), profile.pkgs)
+        assertEquals(
+            listOf("""[text="关闭"]""", """[desc="关闭"]"""),
+            profile.suppressOn("com.tencent.mm.plugin.appbrand.ui.AppBrandUI00"),
+        )
+        assertTrue(profile.suppressOn("com.tencent.mm.ui.LauncherUI").isEmpty())
+        assertTrue(profile.suppressOn(null).isEmpty())
+        assertFalse(profile.forceGesture())
+    }
+
+    @Test
+    fun msaProfileRetriesWithGestureBudget() {
+        // B-206 续：MSA 开屏——强制手势（performAction 不生效）+ 补点预算（入场吞点击修正）。
+        val profile = com.wavexzore.toolbox.feature.adskip.profile.SystemAdSolutionProfile()
+        assertEquals(setOf("com.miui.systemAdSolution"), profile.pkgs)
+        assertTrue(profile.forceGesture())
+        val group = profile.groups().single()
+        assertEquals(5, group.actionMaximum)
+        assertEquals(350L, group.actionCd)
+        assertEquals(true, group.popupAware)
+        assertTrue(GroupGating.active(group, AdSkipGroup.MODE_SPLASH, "android.widget.FrameLayout"))
+        assertTrue(profile.suppressOn(null).isEmpty())
     }
 }
