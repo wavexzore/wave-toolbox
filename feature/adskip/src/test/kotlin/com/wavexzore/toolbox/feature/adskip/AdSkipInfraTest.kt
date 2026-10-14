@@ -21,6 +21,7 @@ class AdSkipInfraTest {
 
     private fun classifier(
         quirks: OemQuirks = OemQuirks.DEFAULT,
+        screen: Pair<Int, Int> = 1080 to 2400,
         bounds: (String) -> WindowBounds? = { null },
     ) = PopupClassifier(quirks, bounds, { screen })
 
@@ -28,7 +29,7 @@ class AdSkipInfraTest {
     private fun tracker(
         quirks: OemQuirks = OemQuirks.DEFAULT,
         bounds: (String) -> WindowBounds? = { Bounds.FULL },
-    ) = WindowTracker(classifier(quirks, bounds), quirks) { fakeNow }
+    ) = WindowTracker(classifier(quirks = quirks, bounds = bounds), quirks) { fakeNow }
 
     private object Bounds {
         val FULL = WindowBounds(0, 0, 1080, 2400)
@@ -73,6 +74,26 @@ class AdSkipInfraTest {
     @Test
     fun missingBoundsIsNotPopup() {
         assertFalse(classifier { null }.isPopupWindow("p"))
+    }
+
+    @Test
+    fun hyperOsLaunchAnimationWindowIsNotPopup() {
+        // M154FF 实测启动动画帧：15,21,1193,2579 / 1208x2624（等比 0.975，内缩 ≤2%）
+        val c = classifier(screen = 1208 to 2624) { WindowBounds(15, 21, 1193, 2579) }
+        assertFalse(c.isPopupWindow("p"))
+    }
+
+    @Test
+    fun nearFullInsetsWithinToleranceAreNotPopup() {
+        val c = classifier { WindowBounds(10, 20, 1075, 2385) }
+        assertFalse(c.isPopupWindow("p"))
+    }
+
+    @Test
+    fun largeScaleUniformWindowIsNotPopup() {
+        // 5% 内缩、等比 0.9/0.9（启动动画中段）
+        val c = classifier { WindowBounds(54, 120, 1026, 2280) }
+        assertFalse(c.isPopupWindow("p"))
     }
 
     @Test
