@@ -1,6 +1,7 @@
 package com.wavexzore.toolbox.feature.settings
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wavexzore.toolbox.core.accessibility.AccessibilitySelfHeal
@@ -13,6 +14,7 @@ import com.wavexzore.toolbox.core.data.stats.StatsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +30,14 @@ data class SettingsUiState(
     val eventRecordEnabled: Boolean = SettingsRepository.DEFAULT_EVENT_RECORD,
 )
 
+/**
+ * 自愈行状态（设置页展示模型）：
+ * - OK：已授权且服务已连接 —— 只显示「已开启」，不展示动作；
+ * - NEEDS_REPAIR：已授权但服务未开启/未绑定 —— 展示「修复教程」（一键修复 + 手动兜底 + 自动重试收敛）；
+ * - UNAUTHORIZED：缺 WRITE_SECURE_SETTINGS —— 展示「修复教程」（系统设置手动修复为主，adb 命令可选）。
+ */
+enum class SelfHealState { OK, NEEDS_REPAIR, UNAUTHORIZED }
+
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     @ApplicationContext context: Context,
@@ -42,13 +52,55 @@ class SettingsViewModel @Inject constructor(
     val accessibilityEnabled: StateFlow<Boolean> = stateMonitor.serviceEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    /** WRITE_SECURE_SETTINGS 授权态（自愈可用性）。 */
-    private val _secureSettingsGranted = MutableStateFlow(selfHeal.isGranted())
-    val secureSettingsGranted: StateFlow<Boolean> = _secureSettingsGranted
-
     /** 自愈动作最近结果文案（null=尚未执行）。 */
     private val _healStatus = MutableStateFlow<String?>(null)
     val healStatus: StateFlow<String?> = _healStatus
+
+    /** 自愈行状态（授权 × 服务连接 × 引擎开关；2s 轮询，adb 授权后可自动反映）。 */
+    val selfHealState: StateFlow<SelfHealState> = combine(
+        selfHeal.status,
+        accessibilityEnabled,
+    ) { status, enabled ->
+        when {
+            !status.granted -> SelfHealState.UNAUTHORIZED
+            !enabled || !status.connected -> SelfHealState.NEEDS_REPAIR
+            else -> SelfHealState.OK
+        }
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        if (selfHeal.isGranted()) SelfHealState.NEEDS_REPAIR else SelfHealState.UNAUTHORIZED,
+    )
+
+    private var autoHealing = false
+
+    init {
+        // 进入「需要修复」且已授权 → 自动重试（重装/被回收/授权后自愈；失败每 5s 收敛重试）
+        viewModelScope.launch {
+            selfHealState.collect { state ->
+                if (state == SelfHealState.NEEDS_REPAIR && selfHeal.isGranted()) maybeAutoHeal()
+            }
+        }
+    }
+
+    private fun maybeAutoHeal() {
+        if (autoHealing) return
+        autoHealing = true
+        viewModelScope.launch {
+            val retryNeeded = try {
+                val result = selfHeal.heal()
+                Log.i(TAG, "auto retry result=${result.name}")
+                if (result == AccessibilityServiceBootstrap.Result.ENABLED) {
+                    _healStatus.value = "已自动修复 · 已重新绑定"
+                }
+                delay(AUTO_RETRY_DELAY_MS)
+                selfHealState.value == SelfHealState.NEEDS_REPAIR && selfHeal.isGranted()
+            } finally {
+                autoHealing = false
+            }
+            if (retryNeeded) maybeAutoHeal()
+        }
+    }
 
     /** 一次性 adb 授权命令（未授权时展示复制）。 */
     val grantCommand: String = selfHeal.grantCommand
@@ -86,23 +138,15 @@ class SettingsViewModel @Inject constructor(
 
     fun openAccessibilitySettings() = stateMonitor.openAccessibilitySettings()
 
-    /** 重查授权态（进入页面 / 执行动作时调用，授权在电脑侧完成后可即时反映）。 */
-    fun refreshGrant() {
-        _secureSettingsGranted.value = selfHeal.isGranted()
-    }
-
-    /** 授权命令复制完成提示。 */
+    /** 授权命令复制完成提示（授权态由轮询自动反映）。 */
     fun onGrantCommandCopied() {
-        refreshGrant()
         _healStatus.value = "命令已复制 · 在电脑执行后回到本页"
     }
 
     /** 执行无障碍自愈（受控重绑/补挂载）；结果映射为提示文案。 */
     fun healBinding() {
-        refreshGrant()
         viewModelScope.launch {
             val result = selfHeal.heal()
-            _secureSettingsGranted.value = selfHeal.isGranted()
             _healStatus.value = when (result) {
                 AccessibilityServiceBootstrap.Result.ENABLED -> "已修复 · 已重新绑定"
                 AccessibilityServiceBootstrap.Result.ALREADY_ENABLED -> "服务正常 · 无需修复"
@@ -128,5 +172,12 @@ class SettingsViewModel @Inject constructor(
             pipeline.clearLog()
             settingsRepository.clearAll()
         }
+    }
+
+    private companion object {
+        const val TAG = "WaveA11y.SelfHeal"
+
+        /** 自动重试失败后的收敛间隔。 */
+        const val AUTO_RETRY_DELAY_MS = 5_000L
     }
 }

@@ -26,7 +26,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -68,11 +67,10 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val accessibilityEnabled by viewModel.accessibilityEnabled.collectAsStateWithLifecycle()
-    val secureSettingsGranted by viewModel.secureSettingsGranted.collectAsStateWithLifecycle()
+    val selfHealState by viewModel.selfHealState.collectAsStateWithLifecycle()
     val healStatus by viewModel.healStatus.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var dialog by rememberSaveable { mutableStateOf("") }
-    LaunchedEffect(Unit) { viewModel.refreshGrant() }
 
     WaveScaffold { padding ->
         Column(
@@ -116,18 +114,20 @@ fun SettingsScreen(
                         WavePill("未开启", WaveTone.Red)
                     }
                 }
-                WaveDivider(modifier = Modifier.padding(top = 12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "未开启时无法读取屏幕",
-                        fontSize = 12.sp,
-                        color = Wave.Ink3,
-                        modifier = Modifier.weight(1f),
-                    )
-                    WaveTextAction("系统设置 ›", viewModel::openAccessibilitySettings)
+                if (!accessibilityEnabled) {
+                    WaveDivider(modifier = Modifier.padding(top = 12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "未开启时无法读取屏幕",
+                            fontSize = 12.sp,
+                            color = Wave.Ink3,
+                            modifier = Modifier.weight(1f),
+                        )
+                        WaveTextAction("去开启 ›", viewModel::openAccessibilitySettings)
+                    }
                 }
                 WaveDivider(modifier = Modifier.padding(top = 12.dp))
                 Row(
@@ -137,35 +137,19 @@ fun SettingsScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text("绑定自愈", fontSize = 12.5.sp, color = Wave.Ink2)
                         Text(
-                            text = healStatus ?: if (secureSettingsGranted) {
-                                "服务被系统回收后可一键重绑"
-                            } else {
-                                "未授权：先复制命令在电脑执行一次 adb"
+                            text = when (selfHealState) {
+                                SelfHealState.OK -> "服务被系统回收后可自动恢复"
+                                SelfHealState.NEEDS_REPAIR -> "服务未开启或未绑定 · 需要修复"
+                                SelfHealState.UNAUTHORIZED -> "未授权 · 可在系统设置手动修复"
                             },
                             fontSize = 11.5.sp,
                             color = Wave.Ink3,
                         )
-                        if (!secureSettingsGranted) {
-                            Text(
-                                text = viewModel.grantCommand,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = Wave.Ink3,
-                                modifier = Modifier.padding(top = 3.dp),
-                            )
-                        }
                     }
-                    if (secureSettingsGranted) {
-                        WaveTextAction("立即修复", viewModel::healBinding)
+                    if (selfHealState == SelfHealState.OK) {
+                        WavePill("已开启", WaveTone.Green)
                     } else {
-                        WaveTextAction(
-                            text = "复制命令",
-                            onClick = {
-                                val clipboard = context.getSystemService(ClipboardManager::class.java)
-                                clipboard?.setPrimaryClip(ClipData.newPlainText("adb", viewModel.grantCommand))
-                                viewModel.onGrantCommandCopied()
-                            },
-                        )
+                        WaveTextAction("修复教程", onClick = { dialog = "heal" })
                     }
                 }
             }
@@ -334,7 +318,90 @@ fun SettingsScreen(
             message = "v0.1 · 首个版本\n· 开屏广告自动跳过（稳妥/激进双模式）\n· 按应用开关 · 运行日志\n· 误操作修复：前台守卫 / 窗口收紧 / 连点防护",
             onDismiss = { dialog = "" },
         )
+        "heal" -> HealDialog(
+            state = selfHealState,
+            grantCommand = viewModel.grantCommand,
+            healStatus = healStatus,
+            onCopy = {
+                val clipboard = context.getSystemService(ClipboardManager::class.java)
+                clipboard?.setPrimaryClip(ClipData.newPlainText("adb", viewModel.grantCommand))
+                viewModel.onGrantCommandCopied()
+            },
+            onHeal = viewModel::healBinding,
+            onOpenSettings = viewModel::openAccessibilitySettings,
+            onDismiss = { dialog = "" },
+        )
     }
+}
+
+@Composable
+private fun HealDialog(
+    state: SelfHealState,
+    grantCommand: String,
+    healStatus: String?,
+    onCopy: () -> Unit,
+    onHeal: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val unauthorized = state == SelfHealState.UNAUTHORIZED
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Wave.Card,
+        title = { Text("修复教程", fontSize = 16.sp) },
+        text = {
+            Column {
+                if (unauthorized) {
+                    Text("服务未连接时，去系统设置手动重开即可（无需 adb）：", fontSize = 13.5.sp, color = Wave.Ink2, lineHeight = 21.sp)
+                    Text(
+                        "① 打开 系统设置 → 无障碍\n② 找到「wave工具箱」重新打开（若显示已开启，先关闭再打开）",
+                        fontSize = 12.5.sp,
+                        color = Wave.Ink2,
+                        lineHeight = 20.sp,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                    Text(
+                        "可选：在电脑执行一次 adb 命令，之后可在本页自动修复：",
+                        fontSize = 12.5.sp,
+                        color = Wave.Ink3,
+                        modifier = Modifier.padding(top = 10.dp),
+                    )
+                    Text(
+                        grantCommand,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = Wave.Ink,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    )
+                    WaveTextAction("复制 adb 命令", onClick = onCopy, modifier = Modifier.padding(top = 2.dp))
+                } else {
+                    Text(
+                        "无障碍服务处于未绑定状态（被系统回收或异常）。点击「立即修复」执行受控重绑，其他无障碍服务不受影响。",
+                        fontSize = 13.5.sp,
+                        color = Wave.Ink2,
+                        lineHeight = 21.sp,
+                    )
+                    Text(
+                        "若修复无效，可在系统设置 → 无障碍中先关闭再重新打开。",
+                        fontSize = 12.sp,
+                        color = Wave.Ink3,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+                healStatus?.let {
+                    Text(it, fontSize = 12.5.sp, color = Wave.Ink2, modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            if (unauthorized) {
+                TextButton(onClick = onOpenSettings) { Text("去系统设置", color = Wave.Ink) }
+            } else {
+                TextButton(onClick = onHeal) { Text("立即修复", color = Wave.Ink) }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("关闭", color = Wave.Ink2) } },
+    )
 }
 
 @Composable
