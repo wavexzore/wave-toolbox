@@ -138,6 +138,7 @@ fun UpdateScreen(
                     } else {
                         WaveGhostButton("忽略此版本", onClick = viewModel::skipCurrent)
                     }
+                    WaveGhostButton("重新检查", onClick = viewModel::check)
                     WaveGhostButton("去 Release 页", onClick = { viewModel.openReleasePage(current.info.htmlUrl) })
                 }
 
@@ -185,6 +186,7 @@ fun UpdateScreen(
                     Spacer(Modifier.height(12.dp))
                     WavePrimaryButton("安装", onClick = viewModel::install)
                     WaveGhostButton("重新下载", onClick = viewModel::redownload)
+                    WaveGhostButton("重新检查", onClick = viewModel::check)
                 }
 
                 is UpdateState.Error -> {
