@@ -21,6 +21,7 @@ import com.wavexzore.toolbox.feature.settings.SettingsScreen
 import com.wavexzore.toolbox.feature.settings.SetupGuideScreen
 import com.wavexzore.toolbox.feature.settings.SnapshotScreen
 import com.wavexzore.toolbox.feature.settings.StatsScreen
+import com.wavexzore.toolbox.feature.settings.update.UpdateScreen
 import com.wavexzore.toolbox.ui.components.WaveBottomBar
 import com.wavexzore.toolbox.ui.home.HomeScreen
 
@@ -32,6 +33,7 @@ object Routes {
     const val Snapshot = "snapshot"
     const val Stats = "stats"
     const val Diagnostics = "diagnostics"
+    const val Update = "update"
     const val Feature = "feature/{featureId}"
     const val FeatureApps = "feature/{featureId}/apps"
 
@@ -85,6 +87,7 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
                     onOpenSnapshot = { navController.navigate(Routes.Snapshot) },
                     onOpenStats = { navController.navigate(Routes.Stats) },
                     onOpenDiagnostics = { navController.navigate(Routes.Diagnostics) },
+                    onOpenUpdate = { navController.navigate(Routes.Update) },
                 )
             }
             composable(Routes.EventLog) {
@@ -101,6 +104,9 @@ fun AppNavHost(navController: NavHostController = rememberNavController()) {
             }
             composable(Routes.Diagnostics) {
                 DiagnosticsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Routes.Update) {
+                UpdateScreen(onBack = { navController.popBackStack() })
             }
             composable(
                 route = Routes.Feature,

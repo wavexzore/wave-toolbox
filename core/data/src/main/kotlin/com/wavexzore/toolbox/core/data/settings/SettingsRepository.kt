@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -61,6 +63,18 @@ class SettingsRepository @Inject constructor(
     val eventRecordEnabled: Flow<Boolean> = context.settingsDataStore.data
         .map { prefs -> prefs[KEY_EVENT_RECORD] ?: DEFAULT_EVENT_RECORD }
 
+    /** 更新自动检查（`update.autoCheck`，默认 true）：冷启动按 24h 节流检查。 */
+    val updateAutoCheck: Flow<Boolean> = context.settingsDataStore.data
+        .map { prefs -> prefs[KEY_UPDATE_AUTO_CHECK] ?: DEFAULT_UPDATE_AUTO_CHECK }
+
+    /** 上次完成检查时间戳（`update.lastCheckAt`，ms，默认 0；含失败完成，用于 24h 节流）。 */
+    val updateLastCheckAt: Flow<Long> = context.settingsDataStore.data
+        .map { prefs -> prefs[KEY_UPDATE_LAST_CHECK_AT] ?: DEFAULT_UPDATE_LAST_CHECK_AT }
+
+    /** 已忽略的更新版本 tag（`update.skippedTag`，默认空；命中时仅在列表弱化标注）。 */
+    val updateSkippedTag: Flow<String> = context.settingsDataStore.data
+        .map { prefs -> prefs[KEY_UPDATE_SKIPPED_TAG] ?: DEFAULT_UPDATE_SKIPPED_TAG }
+
     /** 特性开关（`feature.<id>.enabled`，动态键；缺省取特性默认值）。 */
     fun featureEnabled(id: String, default: Boolean): Flow<Boolean> = context.settingsDataStore.data
         .map { prefs -> prefs[booleanPreferencesKey("feature.$id.enabled")] ?: default }
@@ -99,7 +113,19 @@ class SettingsRepository @Inject constructor(
         context.settingsDataStore.edit { prefs -> prefs[KEY_EVENT_RECORD] = enabled }
     }
 
-    /** 重置全部设置（不含：数据库统计 / 特性配置）。 */
+    suspend fun setUpdateAutoCheck(enabled: Boolean) {
+        context.settingsDataStore.edit { prefs -> prefs[KEY_UPDATE_AUTO_CHECK] = enabled }
+    }
+
+    suspend fun setUpdateLastCheckAt(epochMs: Long) {
+        context.settingsDataStore.edit { prefs -> prefs[KEY_UPDATE_LAST_CHECK_AT] = epochMs }
+    }
+
+    suspend fun setUpdateSkippedTag(tag: String) {
+        context.settingsDataStore.edit { prefs -> prefs[KEY_UPDATE_SKIPPED_TAG] = tag }
+    }
+
+    /** 重置全部设置（不含：数据库统计 / 特性配置；含 `update.*` 更新检查状态）。 */
     suspend fun clearAll() {
         context.settingsDataStore.edit { prefs -> prefs.clear() }
     }
@@ -124,6 +150,9 @@ class SettingsRepository @Inject constructor(
         val KEY_KEEPALIVE_ENABLED = booleanPreferencesKey("keepalive.enabled")
         val KEY_BOOT_AUTOSTART = booleanPreferencesKey("boot.autostart")
         val KEY_EVENT_RECORD = booleanPreferencesKey("log.enabled")
+        val KEY_UPDATE_AUTO_CHECK = booleanPreferencesKey("update.autoCheck")
+        val KEY_UPDATE_LAST_CHECK_AT = longPreferencesKey("update.lastCheckAt")
+        val KEY_UPDATE_SKIPPED_TAG = stringPreferencesKey("update.skippedTag")
 
         const val DEFAULT_ENGINE_ENABLED = true
         const val DEFAULT_CONTENT_THROTTLE_MS = 100
@@ -138,5 +167,9 @@ class SettingsRepository @Inject constructor(
         const val DEFAULT_KEEPALIVE_ENABLED = true
         const val DEFAULT_BOOT_AUTOSTART = true
         const val DEFAULT_EVENT_RECORD = true
+
+        const val DEFAULT_UPDATE_AUTO_CHECK = true
+        const val DEFAULT_UPDATE_LAST_CHECK_AT = 0L
+        const val DEFAULT_UPDATE_SKIPPED_TAG = ""
     }
 }
