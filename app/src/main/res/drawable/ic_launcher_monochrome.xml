@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- wave工具箱 图标 · 单色主题层（Android 13+ themed icon）：
+     系统按壁纸主题着色（本文件仅 alpha 有意义，白色为准）。
+     几何与应用图标前景同为方向 A4「W 独奏」；API 26~32 忽略本层。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M21,49 C27,49 24,71.5 37.5,71.5 C49.5,71.5 45,38.5 54,38.5 C63,38.5 58.5,71.5 70.5,71.5 C84,71.5 81,49 87,49"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="12"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>
