@@ -144,6 +144,8 @@ class RuleEngine @Inject constructor(
 
     suspend fun onEvent(event: A11yEvent) {
         val pkg = event.packageName ?: return
+        // 自身包 WSC 现经管线放行（B-205 边界令牌）：账本不参与，直接放行返回。
+        if (pkg == selfPackage) return
         val now = System.currentTimeMillis()
         // 账本先行：本次事件所属包/页面实例（内容事件先于窗口事件到达时先占位，窗口事件到达只升级不重置）
         if (event.type == A11yEventType.WINDOW_STATE_CHANGED) {
@@ -158,7 +160,6 @@ class RuleEngine @Inject constructor(
         } else {
             ledger.onWindow(pkg, null, activityLike = false, now = now)
         }
-        if (pkg == selfPackage) return
 
         val rules = ensureIndex()?.query(pkg, activityFor(pkg), versionCodeOf(pkg), versionNameOf(pkg)) ?: return
         Log.d(TAG, "eval pkg=$pkg rules=${rules.size} act=${activityFor(pkg)?.substringAfterLast('.')}")

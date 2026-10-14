@@ -68,10 +68,16 @@ object NodeAdapter {
             val raw = android.graphics.Rect()
             source.getBoundsInScreen(raw)
             val bounds = Rect(raw.left, raw.top, raw.right, raw.bottom)
-            val onScreen = bounds.width > 0 && bounds.height > 0 &&
+            val hasArea = bounds.width > 0 || bounds.height > 0
+            val onScreen = hasArea &&
                 bounds.right > 0 && bounds.left < screenWidth &&
                 bounds.bottom > 0 && bounds.top < screenHeight
-            val view = AndroidNodeView(source, depth, bounds, source.isVisibleToUser && onScreen)
+            val degenerate = bounds.width <= 0 || bounds.height <= 0
+            // B-205：退化节点豁免——Compose 实测按钮 height=0 且 clickable（市场种果树「关闭」，
+            // bounds [1077,2564][1179,2564]）；框架 isVisibleToUser 不可靠时，
+            // 可点击且非全退化的节点仍视为可见（全退化 [0,0,0,0] 与旧行为一致）。
+            val visible = onScreen && (source.isVisibleToUser || (degenerate && source.isClickable))
+            val view = AndroidNodeView(source, depth, bounds, visible)
             view.parent = parent
             if (depth < MAX_DEPTH) {
                 val childCount = runCatching { source.childCount }.getOrDefault(0)

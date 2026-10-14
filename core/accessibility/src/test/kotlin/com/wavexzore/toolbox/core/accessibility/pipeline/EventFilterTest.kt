@@ -26,8 +26,15 @@ class EventFilterTest {
     }
 
     @Test
-    fun `drops self package events`() {
+    fun `drops self package non-window events`() {
         assertEquals(DropReason.SELF_PACKAGE, evaluate(a11yEvent(packageName = self)))
+    }
+
+    @Test
+    fun `passes self package window events for boundary token`() {
+        assertNull(
+            evaluate(a11yEvent(packageName = self, type = A11yEventType.WINDOW_STATE_CHANGED)),
+        )
     }
 
     @Test

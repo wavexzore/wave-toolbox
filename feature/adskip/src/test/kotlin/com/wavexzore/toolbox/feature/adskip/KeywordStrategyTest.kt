@@ -43,6 +43,23 @@ class KeywordStrategyTest {
     }
 
     @Test
+    fun picksZeroHeightClickableClose() {
+        // B-205 实测树：市场种果树「关闭」为 Button(clickable=true, height=0)——
+        // 底部且非顶部 35%，靠「自可点击」过约束，零面积豁免后应被选中。
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1208,2624], "children":[
+              { "text":"关闭", "class":"android.widget.Button", "clickable":true, "bounds":[1077,2564,1179,2564] }
+            ]}
+            """.trimIndent(),
+        )
+        val pick = KeywordStrategy.pick(root, screenWidth = 1208, screenHeight = 2624)
+        assertNotNull(pick)
+        assertEquals("关闭", pick.matched)
+        assertEquals(2564, pick.node.bounds.top)
+    }
+
+    @Test
     fun excludesSkipLogin() {
         val root = tree(
             """

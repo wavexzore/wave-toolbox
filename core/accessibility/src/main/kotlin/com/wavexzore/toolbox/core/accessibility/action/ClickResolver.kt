@@ -50,7 +50,9 @@ object ClickResolver {
     fun isCheckableClass(className: String?): Boolean = NodeFilters.isCheckableClass(className)
 
     fun centerOf(rect: Rect): Pair<Int, Int>? {
-        if (rect.width <= 0 || rect.height <= 0) return null
+        // B-205：退化放行——零高/零宽但非全退化（如 Compose height=0 按钮）的中心仍是
+        // 屏内有效点；仅全退化 [0,0,0,0] 返回 null。
+        if (rect.width <= 0 && rect.height <= 0) return null
         return rect.left + rect.width / 2 to rect.top + rect.height / 2
     }
 }

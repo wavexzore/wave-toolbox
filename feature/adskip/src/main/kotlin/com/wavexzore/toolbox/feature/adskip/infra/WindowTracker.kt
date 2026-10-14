@@ -28,6 +28,15 @@ class WindowTracker(
 
     fun current(pkg: String): Mark? = marks[pkg]
 
+    /**
+     * 记录前台包（仅更新跨包边界令牌，不建立/不更替实例；B-205 令牌卫生命）。
+     * 供「自身包 / 三态 OFF 包 / 系统选择器」等早退路径使用——这些包不参与尝试，
+     * 但它们的出现同样是跨包边界，必须打断后续 onForeground 的「同包幂等」判定。
+     */
+    fun noteForeground(pkg: String) {
+        lastForegroundPkg = pkg
+    }
+
     /** 包进入前台：跨包切换时建立新实例（同包重复调用幂等）。 */
     fun onForeground(pkg: String, cls: String?): Mark {
         val existing = marks[pkg]
@@ -36,11 +45,23 @@ class WindowTracker(
         return newInstance(pkg, cls)
     }
 
-    /** WSC 推进（等价迁移）：splash=只更新类别；any=真实活动窗口重置。 */
-    fun onWindowStateChanged(pkg: String, cls: String?, mode: String, foreground: Boolean): Mark {
+    /**
+     * WSC 推进（等价迁移）：splash=只更新类别；any=真实活动窗口重置。
+     *
+     * [refreshOnActivity]（B-205 应用内增强，profile 显式开启）：splash 模式下亦对
+     * 「新的真实 Activity」重置实例（弹窗窗口与噪声类名仍不重置）——为进入前台 5s
+     * 之后才出现、或经应用内跳转产生的广告页（如应用商店互动开屏）开启窗口期。
+     */
+    fun onWindowStateChanged(
+        pkg: String,
+        cls: String?,
+        mode: String,
+        foreground: Boolean,
+        refreshOnActivity: Boolean = false,
+    ): Mark {
         val prev = marks[pkg] ?: return newInstance(pkg, cls)
         if (cls == null || cls == prev.activity) return prev
-        val shouldReset = mode == MODE_ANY && foreground &&
+        val shouldReset = (mode == MODE_ANY || refreshOnActivity) && foreground &&
             ClassNames.isActivityLike(cls) && !classifier.isPopupWindow(pkg)
         return if (shouldReset) {
             newInstance(pkg, cls)
