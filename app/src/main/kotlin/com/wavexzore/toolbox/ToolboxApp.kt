@@ -5,6 +5,7 @@ import android.util.Log
 import com.wavexzore.toolbox.core.accessibility.AccessibilitySelfHeal
 import com.wavexzore.toolbox.core.accessibility.keepalive.KeepAliveService
 import com.wavexzore.toolbox.core.data.settings.SettingsRepository
+import com.wavexzore.toolbox.feature.settings.update.UpdateRepository
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +22,9 @@ class ToolboxApp : Application() {
     @Inject
     lateinit var accessibilitySelfHeal: AccessibilitySelfHeal
 
+    @Inject
+    lateinit var updateRepository: UpdateRepository
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
@@ -35,6 +39,12 @@ class ToolboxApp : Application() {
                 "bootstrap result=" +
                     (outcome.getOrNull()?.name ?: outcome.exceptionOrNull()?.let { it::class.simpleName }),
             )
+        }
+        // 应用内更新（T-309）：启动检查一次（受 autoCheck + 24h 节流约束）；
+        // 自有 scope 内部执行，异常仅记录不崩启动。
+        appScope.launch {
+            runCatching { updateRepository.ensureFreshOnLaunch() }
+                .onFailure { Log.w("WaveUpdate", "launch check failed: ${it::class.simpleName}") }
         }
         // T-009：跟随「前台保活」设置启动/停止常驻服务（后台限制下静默失败，由 BootReceiver/无障碍服务兜底）
         appScope.launch {

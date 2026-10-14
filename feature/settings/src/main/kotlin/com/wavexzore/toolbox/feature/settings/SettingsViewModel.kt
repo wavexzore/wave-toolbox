@@ -11,6 +11,11 @@ import com.wavexzore.toolbox.core.accessibility.action.RuleEngine
 import com.wavexzore.toolbox.core.accessibility.pipeline.EventPipeline
 import com.wavexzore.toolbox.core.data.settings.SettingsRepository
 import com.wavexzore.toolbox.core.data.stats.StatsRepository
+import com.wavexzore.toolbox.core.design.components.WaveTone
+import com.wavexzore.toolbox.feature.settings.update.UpdateBadge
+import com.wavexzore.toolbox.feature.settings.update.UpdateRepository
+import com.wavexzore.toolbox.feature.settings.update.UpdateState
+import com.wavexzore.toolbox.feature.settings.update.toBadge
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -21,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
@@ -50,6 +56,7 @@ class SettingsViewModel @Inject constructor(
     private val pipeline: EventPipeline,
     private val stateMonitor: AccessibilityStateMonitor,
     private val selfHeal: AccessibilitySelfHeal,
+    private val updateRepository: UpdateRepository,
 ) : ViewModel() {
 
     val accessibilityEnabled: StateFlow<Boolean> = stateMonitor.serviceEnabled
@@ -121,6 +128,11 @@ class SettingsViewModel @Inject constructor(
         val info = context.packageManager.getPackageInfo(context.packageName, 0)
         "v${info.versionName} (${info.versionCode})"
     }.getOrDefault("-")
+
+    /** 关于行 Pill 映射（唯一来源=Repository state；9 行全表）。 */
+    val updateBadge: StateFlow<UpdateBadge?> = updateRepository.state
+        .map { state -> state.toBadge() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val uiState: StateFlow<SettingsUiState> = combine(
         settingsRepository.engineEnabled,

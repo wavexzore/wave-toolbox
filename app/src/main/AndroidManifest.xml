@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 应用内更新（T-301）：GitHub Releases 检查与 APK 下载 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 应用内更新（T-301）：调起系统安装器安装下载的 APK（targetSdk 26+ 必需） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <application
         android:name=".ToolboxApp"
         android:icon="@mipmap/ic_launcher"

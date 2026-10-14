@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -66,12 +67,14 @@ fun SettingsScreen(
     onOpenSnapshot: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenDiagnostics: () -> Unit,
+    onOpenUpdate: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val accessibilityEnabled by viewModel.accessibilityEnabled.collectAsStateWithLifecycle()
     val selfHealState by viewModel.selfHealState.collectAsStateWithLifecycle()
     val healStatus by viewModel.healStatus.collectAsStateWithLifecycle()
+    val updateBadge by viewModel.updateBadge.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var dialog by rememberSaveable { mutableStateOf("") }
 
@@ -232,7 +235,7 @@ fun SettingsScreen(
             WaveCard(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp)) {
                 WaveRow(
                     title = "隐私说明",
-                    subtitle = "纯本地运行 · 零网络请求",
+                    subtitle = "纯本地运行 · 仅检查更新时联网",
                     leading = { WaveIconBox(Icons.Filled.Lock, WaveTone.Yellow) },
                     onClick = { dialog = "privacy" },
                     trailing = { WaveChevron() },
@@ -249,6 +252,18 @@ fun SettingsScreen(
 
             WaveSectionLabel("关于")
             WaveCard(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp)) {
+                WaveRow(
+                    title = "检查更新",
+                    subtitle = "来自 GitHub Releases · 仅检查与下载时联网",
+                    minHeight = 52.dp,
+                    leading = { WaveIconBox(Icons.Filled.SystemUpdate, WaveTone.Blue) },
+                    onClick = onOpenUpdate,
+                    trailing = {
+                        updateBadge?.let { WavePill(it.text, it.tone) }
+                        WaveChevron()
+                    },
+                )
+                WaveDivider()
                 WaveRow(
                     title = "版本",
                     minHeight = 52.dp,
@@ -309,12 +324,21 @@ fun SettingsScreen(
         )
         "privacy" -> InfoDialog(
             title = "隐私说明",
-            message = "全部数据仅存本机：不申请网络权限、无账号、无遥测。\n无障碍服务用于读取屏幕节点并执行点击；事件明细保留 14 天。",
+            message = "全部数据仅存本机：无账号、无遥测；仅「检查更新」时访问 GitHub Releases（api.github.com）。\n无障碍服务用于读取屏幕节点并执行点击；事件明细保留 14 天。",
             onDismiss = { dialog = "" },
         )
         "changelog" -> InfoDialog(
             title = "更新日志",
-            message = "v0.1 · 首个版本\n· 开屏广告自动跳过（稳妥/激进双模式）\n· 按应用开关 · 运行日志\n· 误操作修复：前台守卫 / 窗口收紧 / 连点防护",
+            message = buildString {
+                append(viewModel.versionLabel)
+                append(" · 当前版本\n")
+                append("· 应用内更新（检查 / 下载 / 校验 / 安装）\n")
+                append("· 开屏广告自动跳过（稳妥/激进双模式）\n")
+                append("· 按应用开关 · 运行日志\n")
+                append("· 误操作修复：前台守卫 / 窗口收紧 / 连点防护\n\n")
+                append("历史\n")
+                append("· v0.1 · 首个版本")
+            },
             onDismiss = { dialog = "" },
         )
         "heal" -> HealDialog(

@@ -8,9 +8,11 @@ import com.wavexzore.toolbox.core.accessibility.feature.FeatureRegistry
 import com.wavexzore.toolbox.core.accessibility.pipeline.EventPipeline
 import com.wavexzore.toolbox.core.common.dispatchers.AppDispatchers
 import com.wavexzore.toolbox.core.data.rules.RuleRepository
+import androidx.core.content.pm.PackageInfoCompat
 import com.wavexzore.toolbox.core.data.settings.SettingsRepository
 import com.wavexzore.toolbox.core.data.stats.StatsRepository
 import com.wavexzore.toolbox.core.rules.model.RawRuleGroup
+import com.wavexzore.toolbox.feature.settings.update.UpdateRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.text.SimpleDateFormat
@@ -40,6 +42,7 @@ class DiagnosticsExporter @Inject constructor(
     private val ruleEngine: RuleEngine,
     private val featureRegistry: FeatureRegistry,
     private val dispatchers: AppDispatchers,
+    private val updateRepository: UpdateRepository,
 ) {
 
     data class Result(val file: File, val entries: List<String>)
@@ -54,6 +57,7 @@ class DiagnosticsExporter @Inject constructor(
 
         entries["device.txt"] = deviceInfo().toByteArray()
         entries["settings.txt"] = settingsInfo().toByteArray()
+        entries["update.txt"] = updateInfo().toByteArray()
         entries["rules.json"] = runCatching {
             json.encodeToString(ListSerializer(RawRuleGroup.serializer()), ruleRepository.currentGroups())
         }.getOrDefault("[]").toByteArray()
@@ -104,6 +108,15 @@ class DiagnosticsExporter @Inject constructor(
         }
     }
 
+    /** 更新子系统快照（T-310；设计 04 §12）：状态不敏感字段一律取自持久层/平台。 */
+    private suspend fun updateInfo(): String = buildString {
+        appendLine("appVersion=${appVersionName()}(${appVersionCode()})")
+        appendLine("update.autoCheck=${settingsRepository.updateAutoCheck.first()}")
+        appendLine("update.lastCheckAt=${settingsRepository.updateLastCheckAt.first()}")
+        appendLine("update.skippedTag=${settingsRepository.updateSkippedTag.first()}")
+        appendLine("lastState=${updateRepository.stateSummary()}")
+    }
+
     private suspend fun statsCsv(): String {
         val since = System.currentTimeMillis() - 7 * StatsRepository.DAY_MS
         val rows = statsRepository.allSince(since)
@@ -126,4 +139,8 @@ class DiagnosticsExporter @Inject constructor(
     private fun appVersionName(): String = runCatching {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName
     }.getOrNull() ?: "unknown"
+
+    private fun appVersionCode(): Long = runCatching {
+        PackageInfoCompat.getLongVersionCode(context.packageManager.getPackageInfo(context.packageName, 0))
+    }.getOrDefault(-1L)
 }
