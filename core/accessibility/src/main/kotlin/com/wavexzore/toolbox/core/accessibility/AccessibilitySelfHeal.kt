@@ -10,6 +10,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 
 /**
@@ -39,6 +43,17 @@ class AccessibilitySelfHeal @Inject constructor(
     /** 服务当前是否已连接（与自愈共用同一判据）。 */
     fun isConnected(): Boolean = SelectToSpeakService.instance != null
 
+    /** 授权 × 连接联合状态（UI 展示用）。 */
+    data class HealStatus(val granted: Boolean, val connected: Boolean)
+
+    /** 状态轮询流（2s 间隔，仅订阅期运行；grant/返回页面后可自更新）。 */
+    val status: Flow<HealStatus> = flow {
+        while (true) {
+            emit(HealStatus(isGranted(), isConnected()))
+            delay(STATUS_POLL_MS)
+        }
+    }.distinctUntilChanged()
+
     /**
      * 执行自愈（可在主线程调用；内部切 Default，重绑等待不阻塞 UI）。
      * 未授权/写失败等以 [AccessibilityServiceBootstrap.Result] 返回，不抛异常。
@@ -63,5 +78,9 @@ class AccessibilitySelfHeal @Inject constructor(
 
         override fun putAccessibilityEnabled(value: Boolean): Boolean =
             Settings.Secure.putString(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, if (value) "1" else "0")
+    }
+
+    companion object {
+        private const val STATUS_POLL_MS = 2_000L
     }
 }
