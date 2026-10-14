@@ -28,10 +28,13 @@ jobs:
 
       - name: 安装 SDK 平台
         run: |
-          SDKMGR="$(command -v sdkmanager || true)"
-          if [ -z "$SDKMGR" ]; then SDKMGR="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"; fi
-          yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
-          yes | "$SDKMGR" --install "platforms;android-37.0" "build-tools;37.0.0"
+          SDKMGR="$(command -v sdkmanager 2>/dev/null || true)"
+          if [ -z "$SDKMGR" ]; then
+            SDKMGR="$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1 || true)"
+          fi
+          echo "sdkmanager: $SDKMGR"
+          yes 2>/dev/null | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+          yes 2>/dev/null | "$SDKMGR" --install "platforms;android-37.0" "build-tools;37.0.0"
 
       - name: 质量门（test · lint · assembleDebug）
         run: bash scripts/ci.sh
