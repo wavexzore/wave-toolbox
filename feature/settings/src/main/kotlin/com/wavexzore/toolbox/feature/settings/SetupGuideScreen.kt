@@ -171,7 +171,7 @@ fun SetupGuideScreen(
             ) {
                 WaveBrandLockup(chipSize = 18.dp, titleSize = 14.sp, titleColor = Wave.Bg)
                 Spacer(Modifier.height(5.dp))
-                Text("轻量 · 纯本地 · 无联网", fontSize = 11.5.sp, color = Wave.Lime)
+                Text("轻量 · 纯本地 · 仅更新联网", fontSize = 11.5.sp, color = Wave.Lime)
             }
 
             Spacer(Modifier.height(24.dp))

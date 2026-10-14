@@ -126,7 +126,7 @@ class SettingsViewModel @Inject constructor(
 
     val versionLabel: String = runCatching {
         val info = context.packageManager.getPackageInfo(context.packageName, 0)
-        "v${info.versionName} (${info.versionCode})"
+        "v${info.versionName}"
     }.getOrDefault("-")
 
     /** 关于行 Pill 映射（唯一来源=Repository state；9 行全表）。 */
