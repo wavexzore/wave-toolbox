@@ -1,5 +1,7 @@
 package com.wavexzore.toolbox.feature.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,12 +26,14 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -64,7 +68,11 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val accessibilityEnabled by viewModel.accessibilityEnabled.collectAsStateWithLifecycle()
+    val secureSettingsGranted by viewModel.secureSettingsGranted.collectAsStateWithLifecycle()
+    val healStatus by viewModel.healStatus.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var dialog by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(Unit) { viewModel.refreshGrant() }
 
     WaveScaffold { padding ->
         Column(
@@ -120,6 +128,45 @@ fun SettingsScreen(
                         modifier = Modifier.weight(1f),
                     )
                     WaveTextAction("系统设置 ›", viewModel::openAccessibilitySettings)
+                }
+                WaveDivider(modifier = Modifier.padding(top = 12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("绑定自愈", fontSize = 12.5.sp, color = Wave.Ink2)
+                        Text(
+                            text = healStatus ?: if (secureSettingsGranted) {
+                                "服务被系统回收后可一键重绑"
+                            } else {
+                                "未授权：先复制命令在电脑执行一次 adb"
+                            },
+                            fontSize = 11.5.sp,
+                            color = Wave.Ink3,
+                        )
+                        if (!secureSettingsGranted) {
+                            Text(
+                                text = viewModel.grantCommand,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = Wave.Ink3,
+                                modifier = Modifier.padding(top = 3.dp),
+                            )
+                        }
+                    }
+                    if (secureSettingsGranted) {
+                        WaveTextAction("立即修复", viewModel::healBinding)
+                    } else {
+                        WaveTextAction(
+                            text = "复制命令",
+                            onClick = {
+                                val clipboard = context.getSystemService(ClipboardManager::class.java)
+                                clipboard?.setPrimaryClip(ClipData.newPlainText("adb", viewModel.grantCommand))
+                                viewModel.onGrantCommandCopied()
+                            },
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(12.dp))

@@ -2,6 +2,7 @@ package com.wavexzore.toolbox
 
 import android.app.Application
 import android.util.Log
+import com.wavexzore.toolbox.core.accessibility.AccessibilitySelfHeal
 import com.wavexzore.toolbox.core.accessibility.keepalive.KeepAliveService
 import com.wavexzore.toolbox.core.data.settings.SettingsRepository
 import dagger.hilt.android.HiltAndroidApp
@@ -17,10 +18,24 @@ class ToolboxApp : Application() {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
+    @Inject
+    lateinit var accessibilitySelfHeal: AccessibilitySelfHeal
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
         super.onCreate()
+        // 冷启动无障碍自愈（coc-player-v2 移植）：进程重启/被回收后系统可能遗留
+        // 「Enabled 未 Bound」或 crashed 标记，受控重绑恢复绑定；后台执行，300ms
+        // 重绑等待不阻塞冷启动。fail-closed：异常仅记录结果，不重试。
+        appScope.launch {
+            val outcome = runCatching { accessibilitySelfHeal.heal() }
+            Log.i(
+                "WaveA11y.SelfHeal",
+                "bootstrap result=" +
+                    (outcome.getOrNull()?.name ?: outcome.exceptionOrNull()?.let { it::class.simpleName }),
+            )
+        }
         // T-009：跟随「前台保活」设置启动/停止常驻服务（后台限制下静默失败，由 BootReceiver/无障碍服务兜底）
         appScope.launch {
             settingsRepository.keepAliveEnabled.collect { enabled ->
