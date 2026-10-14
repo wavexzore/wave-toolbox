@@ -26,10 +26,12 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - uses: android-actions/setup-android@v3
-
       - name: 安装 SDK 平台
-        run: sdkmanager --install "platforms;android-37.0" "build-tools;37.0.0"
+        run: |
+          SDKMGR="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMGR" ]; then SDKMGR="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"; fi
+          yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+          yes | "$SDKMGR" --install "platforms;android-37.0" "build-tools;37.0.0"
 
       - name: 质量门（test · lint · assembleDebug）
         run: bash scripts/ci.sh
