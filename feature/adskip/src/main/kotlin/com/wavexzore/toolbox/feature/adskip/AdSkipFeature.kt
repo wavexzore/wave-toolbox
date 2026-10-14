@@ -31,6 +31,7 @@ import com.wavexzore.toolbox.feature.adskip.infra.WindowTracker
 import com.wavexzore.toolbox.feature.adskip.profile.AdProfileFactory
 import com.wavexzore.toolbox.feature.adskip.profile.AppAdProfile
 import com.wavexzore.toolbox.feature.adskip.profile.PsyoneBrainmusicProfile
+import com.wavexzore.toolbox.feature.adskip.profile.XiaomiMarketProfile
 import com.wavexzore.toolbox.feature.adskip.strategy.Candidate
 import com.wavexzore.toolbox.feature.adskip.strategy.CandidateProvider
 import com.wavexzore.toolbox.feature.adskip.strategy.KeywordProvider
@@ -174,20 +175,30 @@ class AdSkipFeature @Inject constructor(
     override fun onEvent(event: FeatureEvent) {
         _eventCount.value = _eventCount.value + 1
         val pkg = event.packageName ?: return
-        if (pkg == context.packageName) return
+
+        // 令牌卫生（B-205）：自身包/三态 OFF 包/系统选择器都在下方早退，但它们进入前台
+        // 同样是跨包边界——不记录则从这些中间态返回任一 App 时，onForeground 会误判
+        // 「同包幂等」而复用陈旧实例 → 开屏窗口早已过期 → 该次进入零尝试（实测缺陷）。
+        val foreground = treeProvider.isAppForeground(pkg)
+        if (pkg == context.packageName) {
+            if (foreground) tracker.noteForeground(pkg)
+            return
+        }
         val runMode = pkgMode(pkg)
-        if (runMode == PkgMode.OFF) return
+        if (runMode == PkgMode.OFF) {
+            if (foreground) tracker.noteForeground(pkg)
+            return
+        }
 
         // 系统选择器豁免（D-226）：分享/「打开方式」面板不是广告——原会被当作
         // 新开屏窗口，由通用兜底以关键词「关闭」点到面板 × 而秒关（实测 0.6s）。
         if (SystemPicker.exempt(pkg)) {
             Log.d(TAG, "picker-exempt pkg=$pkg type=${event.type}")
+            if (foreground) tracker.noteForeground(pkg)
             return
         }
 
         // 误操作修复（2026-10-14）：包进入前台 = 新开屏窗口；非前台不点
-        val foreground = treeProvider.isAppForeground(pkg)
-
         if (event.type == TYPE_WINDOW_STATE_CHANGED && foreground) {
             val wb = treeProvider.focusedWindowBounds(pkg)
             Log.d(
@@ -203,7 +214,10 @@ class AdSkipFeature @Inject constructor(
             mark = tracker.onForeground(pkg, event.className ?: mark?.activity)
         }
         if (event.type == TYPE_WINDOW_STATE_CHANGED) {
-            mark = tracker.onWindowStateChanged(pkg, event.className, runMode, foreground)
+            mark = tracker.onWindowStateChanged(
+                pkg, event.className, runMode, foreground,
+                profileFactory.profile(pkg).inAppWindowRefresh(),
+            )
         }
         mark = mark ?: tracker.ensure(pkg, null)
         val instanceKey = tracker.instanceKey(pkg, mark)
@@ -584,6 +598,11 @@ abstract class AdSkipModule {
     @Binds
     @IntoSet
     abstract fun bindPsyoneProfile(profile: PsyoneBrainmusicProfile): AppAdProfile
+
+    /** 小米应用商店（B-205：应用内开屏页窗口刷新）。 */
+    @Binds
+    @IntoSet
+    abstract fun bindXiaomiMarketProfile(profile: XiaomiMarketProfile): AppAdProfile
 }
 
 /**

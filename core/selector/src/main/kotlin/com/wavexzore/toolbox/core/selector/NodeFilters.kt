@@ -17,10 +17,17 @@ object NodeFilters {
     /**
      * keyword/vid 候选链过滤（与 KeywordStrategy 现状等价）：
      * 可见、非编辑、非滚动、非零面积；宽容器且无文本剔除。
+     *
+     * 零面积豁免（B-205 实测）：Compose 下存在 `height=0 且 width>0 且 clickable`
+     * 的退化按钮（市场种果树「关闭」[1077,2564][1179,2564]），点击坐标仍有效——
+     * 可点击且非全退化的零面积节点放行。
      */
     fun passesKeywordCandidate(node: NodeView, screenWidth: Int): Boolean {
         if (!node.isVisible || node.isEditable || node.isScrollable) return false
-        if (node.bounds.width <= 0 || node.bounds.height <= 0) return false
+        if (node.bounds.width <= 0 || node.bounds.height <= 0) {
+            val salvage = node.isClickable && (node.bounds.width > 0 || node.bounds.height > 0)
+            if (!salvage) return false
+        }
         if (isWideContainer(node, screenWidth) && node.text.isNullOrBlank()) return false
         return true
     }

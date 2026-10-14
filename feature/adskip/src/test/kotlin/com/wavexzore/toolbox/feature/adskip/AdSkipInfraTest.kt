@@ -166,6 +166,77 @@ class AdSkipInfraTest {
         assertEquals(m.instance, same.instance)
     }
 
+    // ---- B-205：令牌卫生 + 应用内窗口刷新 ----
+
+    @Test
+    fun noteForegroundKeepsCrossPackageBoundary() {
+        // A 前台 → 经「自身包/选择器/OFF 包」等早退中间态（noteForeground）→ 回 A：
+        // 必须视为跨包重入（新实例 + 新窗口），而非「同包幂等」复用陈旧实例。
+        val t = tracker()
+        fakeNow = 0
+        val m1 = t.onForeground("a", "com.a.MainActivity")
+        fakeNow = 87_000
+        t.noteForeground("com.wavexzore.toolbox")
+        val m2 = t.onForeground("a", "com.a.MainActivity")
+        assertNotEquals(m1.instance, m2.instance)
+        assertTrue(t.isFresh("a", AdSkipGroup.MODE_SPLASH, 5000))
+    }
+
+    @Test
+    fun splashInAppRefreshResetsOnNewActivity() {
+        // splash + profile 开启刷新：同包新真实 Activity（窗口期早已过期）→ 新实例/新窗口。
+        val t = tracker(bounds = { Bounds.FULL })
+        fakeNow = 0
+        val m = t.onForeground("a", "com.a.MainActivity")
+        fakeNow = 60_000
+        val reset = t.onWindowStateChanged(
+            "a", "com.a.orchard.OrchardActivity", AdSkipGroup.MODE_SPLASH,
+            foreground = true, refreshOnActivity = true,
+        )
+        assertNotEquals(m.instance, reset.instance)
+        assertEquals("com.a.orchard.OrchardActivity", reset.activity)
+        assertTrue(t.isFresh("a", AdSkipGroup.MODE_SPLASH, 5000))
+    }
+
+    @Test
+    fun splashInAppRefreshSkipsPopupWindowAndNoise() {
+        val popup = tracker(bounds = { Bounds.DIM_DIALOG })
+        fakeNow = 0
+        val m1 = popup.onForeground("a", "com.a.MainActivity")
+        fakeNow = 60_000
+        val no1 = popup.onWindowStateChanged(
+            "a", "com.a.AdActivity", AdSkipGroup.MODE_SPLASH,
+            foreground = true, refreshOnActivity = true,
+        )
+        assertEquals(m1.instance, no1.instance)
+
+        val noise = tracker(bounds = { Bounds.FULL }, quirks = OemQuirks.MIUI)
+        fakeNow = 0
+        val m2 = noise.onForeground("b", "com.b.MainActivity")
+        fakeNow = 60_000
+        val no2 = noise.onWindowStateChanged(
+            "b", "androidx.viewpager.widget.ViewPager", AdSkipGroup.MODE_SPLASH,
+            foreground = true, refreshOnActivity = true,
+        )
+        assertEquals(m2.instance, no2.instance)
+    }
+
+    @Test
+    fun splashWithoutRefreshKeepsLegacyWindow() {
+        // 回归锁定：未开启刷新的包，splash 模式新 Activity 只更新类别、不续窗口（F1 语义）。
+        val t = tracker()
+        fakeNow = 0
+        val m = t.onForeground("a", "com.a.SplashActivity")
+        fakeNow = 60_000
+        val same = t.onWindowStateChanged(
+            "a", "com.a.MainActivity", AdSkipGroup.MODE_SPLASH,
+            foreground = true, refreshOnActivity = false,
+        )
+        assertEquals(m.instance, same.instance)
+        assertEquals(0L, same.at)
+        assertFalse(t.isFresh("a", AdSkipGroup.MODE_SPLASH, 5000))
+    }
+
     // ---- AttemptScheduler ----
 
     @Test

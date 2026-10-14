@@ -36,6 +36,34 @@ class ProfileAndAssetsTest {
     }
 
     @Test
+    fun xiaomiMarketProfileOptsIntoInAppWindow() {
+        // B-205：市场启用应用内窗口刷新；未适配应用保持默认（false）。
+        val profile = com.wavexzore.toolbox.feature.adskip.profile.XiaomiMarketProfile()
+        assertEquals(setOf("com.xiaomi.market"), profile.pkgs)
+        assertTrue(profile.inAppWindowRefresh())
+        assertFalse(PsyoneBrainmusicProfile().inAppWindowRefresh())
+    }
+
+    @Test
+    fun xiaomiMarketOrchardExitGroupIsScopedAndSuppressesGhostClose() {
+        // B-205：种果树页退出组仅在该 Activity 生效；幽灵「关闭」只在该页抑制。
+        val profile = com.wavexzore.toolbox.feature.adskip.profile.XiaomiMarketProfile()
+        val group = profile.groups().first { it.id == "com.xiaomi.market#orchard-exit" }
+        assertEquals(listOf("com.xiaomi.orchard.sdk.ui.OrchardActivity"), group.activityIds)
+        assertEquals(10.8f, group.position?.xPercent)
+        assertEquals(6.9f, group.position?.yPercent)
+        assertEquals(3, group.actionMaximum)
+        assertTrue(GroupGating.active(group, AdSkipGroup.MODE_SPLASH, "com.xiaomi.orchard.sdk.ui.OrchardActivity"))
+        assertFalse(GroupGating.active(group, AdSkipGroup.MODE_SPLASH, "com.xiaomi.market.business_ui.main.MarketTabActivity"))
+        assertEquals(
+            listOf("""[text="关闭"]""", """[desc="关闭"]"""),
+            profile.suppressOn("com.xiaomi.orchard.sdk.ui.OrchardActivity"),
+        )
+        assertTrue(profile.suppressOn("com.xiaomi.market.business_ui.main.MarketTabActivity").isEmpty())
+        assertTrue(profile.suppressOn(null).isEmpty())
+    }
+
+    @Test
     fun builtinDemoRuleDisabled() {
         val text = File("../../core/rules/src/main/assets/rules/builtin/com.tencent.mm.json5").readText()
         assertTrue(text.contains("enabled: false"))

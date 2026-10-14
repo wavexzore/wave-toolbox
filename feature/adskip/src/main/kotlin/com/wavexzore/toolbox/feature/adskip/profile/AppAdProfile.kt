@@ -30,6 +30,15 @@ interface AppAdProfile {
 
     /** provider 顺序覆写（null=默认顺序；未列出者禁用；T-203 消费）。 */
     fun providerOrder(): List<String>? = null
+
+    /**
+     * 应用内窗口刷新（B-205；splash 模式生效）：true 时，同包内出现新的真实
+     * Activity（非弹窗/非噪声类名）即重置开屏窗口期（新实例）。
+     *
+     * 用途：开屏类广告以应用内页面形态出现、且时机漂移的适配应用
+     * （如应用商店互动开屏/广告落地页）——「适配过的应用才启用应用内增强」。
+     */
+    fun inAppWindowRefresh(): Boolean = false
 }
 
 /** 区域策略（最小集；缺省允许 entry 与声明区域）。 */

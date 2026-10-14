@@ -17,6 +17,18 @@ class NodeFiltersTest {
         assertFalse(NodeFilters.passesKeywordCandidate(node("""{"scrollable":true}"""), 1080))
         assertFalse(NodeFilters.passesKeywordCandidate(node("""{"bounds":[0,0,0,0]}"""), 1080))
         assertTrue(NodeFilters.passesKeywordCandidate(node("""{"text":"跳过","bounds":[0,0,100,50]}"""), 1080))
+        // B-205：零高但可点击且非全退化（实测 Compose 按钮 height=0）→ 放行
+        assertTrue(
+            NodeFilters.passesKeywordCandidate(
+                node("""{"text":"关闭","clickable":true,"bounds":[1077,2564,1179,2564]}"""), 1080,
+            ),
+        )
+        // 同类零高但不可点击 → 仍剔除
+        assertFalse(
+            NodeFilters.passesKeywordCandidate(
+                node("""{"text":"关闭","clickable":false,"bounds":[1077,2564,1179,2564]}"""), 1080,
+            ),
+        )
     }
 
     @Test
