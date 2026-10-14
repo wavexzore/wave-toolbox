@@ -68,7 +68,7 @@ fun HomeScreen(
                         letterSpacing = (-0.6).sp,
                         color = Wave.Ink,
                     )
-                    Text("轻量 · 纯本地 · 无联网", fontSize = 11.5.sp, color = Wave.Ink2, modifier = Modifier.padding(top = 2.dp))
+                    Text("轻量 · 纯本地 · 仅更新联网", fontSize = 11.5.sp, color = Wave.Ink2, modifier = Modifier.padding(top = 2.dp))
                 }
                 WaveIconButton(Icons.Outlined.Info, "说明", onOpenSetupGuide, tint = Wave.Ink2)
             }
@@ -128,7 +128,7 @@ fun HomeScreen(
                 }
             }
 
-            WaveNote("全部数据仅存本机，不申请网络权限。")
+            WaveNote("全部数据仅存本机，仅检查更新时联网。")
             Spacer(Modifier.height(24.dp))
         }
     }

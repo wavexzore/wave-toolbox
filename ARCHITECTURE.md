@@ -8,7 +8,7 @@
 2. **特性零耦合**：`feature/*` 之间互不依赖，新增/移除特性不动其他特性。
 3. **引擎无 UI**：`core` 全层不含 Compose 页面；UI 只存在于 `app` 与 `feature`。
 4. **SPI 注册**：特性实现 `core:feature-api` 的 `ToolFeature` 接口，由 `FeatureRegistry` 在运行时按开关分发无障碍事件。
-5. **纯本地**：无网络权限；规则、统计、日志全部落本地（Room / DataStore）。
+5. **纯本地**：仅「检查更新」访问 GitHub Releases（`api.github.com`）；规则、统计、日志全部落本地（Room / DataStore）。
 
 ## 模块总览（12 模块）
 

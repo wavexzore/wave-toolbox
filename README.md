@@ -7,7 +7,7 @@
 <p align="center">
   免 root 的安卓无障碍工具箱 —— 把手机上各种零散重复操作交给一个 App 自动完成。
   <br>
-  <sub>Android 无障碍服务驱动 · 纯本地运行 · 零网络权限</sub>
+  <sub>Android 无障碍服务驱动 · 纯本地运行 · 仅检查更新时联网</sub>
 </p>
 
 <p align="center">
@@ -41,6 +41,17 @@
 
 更多功能规划中（应用内弹窗拦截、桌面小组件……），以独立特性模块接入，零改动引擎。
 
+### 应用内更新（v1.0.1）
+
+设置 →「检查更新」：启动时按 24h 节流检查 GitHub Releases（latest），应用内下载并强校验后经 FileProvider 调起系统安装器；支持忽略版本、下载取消/重试，失败保文件、进程被杀后可恢复。
+
+| 能力 | 说明 |
+|---|---|
+| 来源 | 仅访问固定端点 `api.github.com`（latest 语义），匿名、无 token、零新依赖 |
+| 校验 | size 前置 + 资产 sha256 存在即强校验（缺失时显式标注）+ 系统签名校验 |
+| 安装 | 未知来源门控 → 授权后返回自动续装；同证书覆盖，versionCode 只进不退 |
+| 健壮性 | 24h 节流（失败同样计入）、下载取消/超时分类重试、半成品留盘下次清理 |
+
 ## 架构
 
 多模块工程（12 模块）：`app` 宿主 + `core` 引擎层（无障碍管线 / 选择器 / 规则 / 数据 / 设计系统等 9 模块）+ `feature` 特性层（彼此零依赖，经 `core:feature-api` 注册、可独立启停）。
@@ -51,7 +62,7 @@ Kotlin · Jetpack Compose · Hilt · Coroutines/Flow · Room/DataStore · kotlin
 
 ## 安装
 
-**方式一：下载（推荐）** — 到 [Releases](https://github.com/wavexzore/wave-toolbox/releases) 下载最新 APK 安装。首次使用按应用内「引导页」三步配置：开启无障碍服务 → 关闭电池优化 → 自启动白名单。
+**方式一：下载（推荐）** — 到 [Releases](https://github.com/wavexzore/wave-toolbox/releases) 下载最新 APK 安装。首次使用按应用内「引导页」三步配置：开启无障碍服务 → 关闭电池优化 → 自启动白名单。已安装用户可经 设置 →「检查更新」在应用内升级。
 
 **方式二：源码构建**
 
@@ -61,11 +72,22 @@ Kotlin · Jetpack Compose · Hilt · Coroutines/Flow · Room/DataStore · kotlin
 ./gradlew test lint              # 质量门（同名聚合脚本：scripts/ci.sh）
 ```
 
+**兼容性**：minSdk 26；真机验证覆盖 Android 12 模拟器与 HyperOS（Android 15）。API 26–30 段按官方端点推断兼容、未逐台实测（欢迎反馈）。
+
 ## 隐私
 
-- 仅申请两项能力：**无障碍服务**（读屏执行点击）与 **常驻通知**（保活）。
-- **零网络权限**：没有 `INTERNET`，规则、统计、日志全部本地存储。
+- 仅申请两项能力：**无障碍服务**（读屏执行点击）与 **常驻通知**（保活）；（「应用内更新」另加 `INTERNET` 与「安装未知应用」两项权限）
+- **仅检查更新联网**：除「检查更新」访问 GitHub Releases（`api.github.com`）外无任何网络请求；规则、统计、日志全部本地存储。
 - 操作均为无障碍模拟点击：无 hook、无协议注入。
+
+## 维护与发版（纪律）
+
+- **tag 形如 `vX.Y.Z` 且不可移动**：已发布 tag（如 `v1.0.0`）视为不可变；移动后必须 `gh release edit <tag> --draft=false --latest` 恢复并复验匿名可见（曾有删 tag 重推把 Release 打回 Draft 的事故）。
+- **同 tag 重传资产必须 bump version**：`versionCode`/`versionName` 至少其一递增，避免「显示已是最新但装不上」。
+- **发布三连**：`gh release create vX.Y.Z --draft` → 匿名复验（`tags/vX.Y.Z`=404、latest 仍指上一版）→ `gh release edit --draft=false --latest` → 匿名复验 200 且资产 `sha256` == 本地 `shasum -a 256`。
+- **资产规范**：APK 固定命名 `wave-toolbox-v<tag>.apk`；Release 正文首行 `SHA-256: <hex>`。
+- **回滚**：坏版本 `gh release edit <tag> --latest=false` 并出补丁版；检查器异常 revert 代码（入口/键保留无害）。
+- **发版门禁**：`./gradlew test lint :app:assembleDebug` 全绿 + `detect-changes` 无未解释 HIGH/CRITICAL。
 
 ## 致谢
 
