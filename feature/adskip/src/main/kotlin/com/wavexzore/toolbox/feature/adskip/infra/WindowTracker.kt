@@ -84,6 +84,14 @@ class WindowTracker(
     /** 记录当前前台包（诊断用）。 */
     fun lastForeground(): String? = lastForegroundPkg
 
+    /**
+     * 跨包令牌是否仍指向 [pkg]：另一个包已进入前台 → false。
+     *
+     * 供延迟尝试/心跳在真正点击前复核（`lastForegroundPkg` 未建立时放行，
+     * 兼容服务在 App 已前台后才连上的场景）。
+     */
+    fun isForeground(pkg: String): Boolean = lastForegroundPkg == null || lastForegroundPkg == pkg
+
     private fun newInstance(pkg: String, cls: String?): Mark {
         val now = clock()
         val mark = Mark(cls, now, instanceSeq.incrementAndGet(), now)

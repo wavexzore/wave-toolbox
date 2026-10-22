@@ -96,6 +96,20 @@ class AdSkipFeature @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val selectorEngine = SelectorEngine()
 
+    /**
+     * 当前设备的 HOME/桌面包集合（李跳跳 d1.e 同款白名单）：
+     * 桌面、负一屏、AOD 都不是广告，自动点击只会误触。Android 11+ 依赖 manifest
+     * `<queries>` 声明 HOME intent；查询失败时退化为空集，不影响其它豁免。
+     */
+    private val homePackages: Set<String> by lazy {
+        runCatching {
+            context.packageManager.queryIntentActivities(
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
+                0,
+            ).mapNotNull { it.activityInfo?.packageName }.toSet()
+        }.getOrDefault(emptySet())
+    }
+
     // ---- 基础设施（T-201；行为等价迁移） ----
 
     internal val quirks = OemQuirks()
@@ -182,6 +196,15 @@ class AdSkipFeature @Inject constructor(
 
     private fun pkgMode(pkg: String): String = PkgMode.effective(mode, perAppModes, disabledPackages, pkg)
 
+    /**
+     * 点击前目标复核（2026-10-19 误操作修复）：
+     * 延迟尝试/心跳排队期间用户可能已经切走——跨包令牌与前台窗口都必须仍指向尝试包，
+     * 否则宁可放弃本次点击。仅凭事件到达时的 foreground 快照会让旧心跳在新前台
+     * （包括工具箱自身）上继续取树/落点。
+     */
+    private fun targetStillForeground(pkg: String): Boolean =
+        tracker.isForeground(pkg) && treeProvider.isAppForeground(pkg)
+
     override fun onEvent(event: FeatureEvent) {
         _eventCount.value = _eventCount.value + 1
         val pkg = event.packageName ?: return
@@ -210,7 +233,7 @@ class AdSkipFeature @Inject constructor(
 
         // 系统选择器豁免（D-226）：分享/「打开方式」面板不是广告——原会被当作
         // 新开屏窗口，由通用兜底以关键词「关闭」点到面板 × 而秒关（实测 0.6s）。
-        if (SystemPicker.exempt(pkg)) {
+        if (SystemPicker.exempt(pkg, homePackages)) {
             Log.d(TAG, "picker-exempt pkg=$pkg type=${event.type}")
             if (foreground) tracker.noteForeground(pkg)
             return
@@ -289,6 +312,11 @@ class AdSkipFeature @Inject constructor(
                 val current = tracker.current(pkg) ?: return@launch
                 if (current.instance != mark.instance) return@launch
                 if (!heartbeat.withinWindow(current.at, System.currentTimeMillis(), entryWindowMs)) return@launch
+                // 用户已切走/目标包不再前台：旧心跳不得继续扫描当前前台窗口。
+                if (!targetStillForeground(pkg)) {
+                    Log.d(TAG, "heartbeat-abort pkg=$pkg last=${tracker.lastForeground()}")
+                    return@launch
+                }
                 val runMode = pkgMode(pkg)
                 if (runMode == PkgMode.OFF) return@launch
                 if (!scheduler.hasBudget(instanceKey, groupMax(pkg, current, runMode), ATTEMPT_OVERHEAD)) return@launch
@@ -317,6 +345,11 @@ class AdSkipFeature @Inject constructor(
         maxAttempts: Int = MAX_ATTEMPTS,
     ) {
         Log.d(TAG, "attempt-enter key=$instanceKey act=${mark.activity}")
+        // 兜底复核：事件入口/心跳的 foreground 快照可能已过期（延迟尝试/心跳）。
+        if (!targetStillForeground(pkg)) {
+            Log.d(TAG, "attempt-abort stale pkg=$pkg last=${tracker.lastForeground()}")
+            return
+        }
         val maxPerInstance = groupMax(pkg, mark, runMode)
         // 已达成功上限或失败预算（成功上限+额外 2 次点击）→ 不再动作；
         // 注意：tree=null / 无候选不消耗预算（只在真实点击后计数），避免启动早期烧掉窗口期
@@ -335,7 +368,7 @@ class AdSkipFeature @Inject constructor(
             if (index < maxAttempts - 1) delay(ATTEMPT_INTERVAL_MS)
         }
         if (scheduler.onceMiss(instanceKey)) {
-            val probe = treeProvider.currentTree(pkg = pkg)
+            val probe = treeProvider.currentTree(pkg = pkg, allowForeignFallback = false)
             Log.d(
                 TAG,
                 "no-candidate pkg=$pkg act=${mark.activity} " +
@@ -347,6 +380,11 @@ class AdSkipFeature @Inject constructor(
     private data class Outcome(val ok: Boolean, val mechanism: String?, val source: String)
 
     private suspend fun tryOnce(pkg: String, mark: WindowTracker.Mark, runMode: String): Outcome? {
+        // 扫描/取树前再复核一次：任何延迟路径都不得在已切走的目标包上动作。
+        if (!targetStillForeground(pkg)) {
+            Log.d(TAG, "try-abort stale pkg=$pkg last=${tracker.lastForeground()}")
+            return null
+        }
         val instanceKey = tracker.instanceKey(pkg, mark)
         val mergedActive = profileFactory.mergedGroups(pkg).filter { GroupGating.active(it, runMode, mark.activity) }
         if (mergedActive.isEmpty() && scheduler.oncePopup("$pkg#${mark.instance}:fallback")) {
@@ -369,29 +407,28 @@ class AdSkipFeature @Inject constructor(
             Log.d(TAG, "popup-enter pkg=$pkg cls=${mark.activity} ($popupReason)")
         }
 
-        val picked = treeProvider.currentTree(pkg = pkg) ?: return null
+        val picked = treeProvider.currentTree(pkg = pkg, allowForeignFallback = false) ?: return null
+        // 严格身份（对齐李跳跳）：树根包名必须等于尝试包。窗口提供器已禁用跨包回退，
+        // 这里再兜一道硬门槛——自身包、其它 App、归属未知一律拒绝。
+        if (picked.rootPkg != pkg) {
+            Log.d(TAG, "try-abort owner-mismatch pkg=$pkg root=${picked.rootPkg}")
+            return null
+        }
         val tree = picked.tree
         val now = System.currentTimeMillis()
 
         val zoneGroups = active.filter { ZoneGate.allows(it, popupContext, mark.activity, mark.activityAt, now) }
         if (zoneGroups.isEmpty()) return null
 
-        // 抑制/手势按「树的归属方」解析（B-209）：launcher 回退树、后台实例跨包回退、跨应用授权
-        // 弹层等场景尝试方 pkg ≠ 树归属 pkg——按尝试方取用会把小程序/授权页「关闭」当跳过点掉。
-        // 页面标签取归属包最近真实 Activity（mark.activity 会被 FrameLayout 等框架标签覆盖）。
-        val profile = profileFactory.profile(pkg)
-        val ownerPkg = picked.rootPkg?.takeIf { it != pkg }
-        val policy = ownerPkg?.let { profileFactory.profile(it) } ?: profile
-        val suppressActivity = if (ownerPkg != null) {
-            lastRealActivity[ownerPkg] ?: tracker.current(ownerPkg)?.activity
-        } else {
-            lastRealActivity[pkg] ?: mark.activity
-        }
+        // 严格身份后树归属恒等于尝试包；抑制/手势按本包最近真实 Activity 解析
+        // （mark.activity 会被 FrameLayout 等框架标签覆盖，B-209 继续保留）。
+        val policy = profileFactory.profile(pkg)
+        val suppressActivity = lastRealActivity[pkg] ?: mark.activity
         val suppressed = policy.suppressOn(suppressActivity)
             .flatMap { selector -> selectorEngine.findAll(tree.root, selector) }
             .map { NodeIdentity.of(it.node) }
             .toSet()
-        Log.d(TAG, "suppress-check pkg=$pkg owner=${ownerPkg ?: pkg} act=$suppressActivity n=${suppressed.size}")
+        Log.d(TAG, "suppress-check pkg=$pkg act=$suppressActivity n=${suppressed.size}")
         val ctx = ProviderContext(
             pkg = pkg,
             root = tree.root,
@@ -411,6 +448,11 @@ class AdSkipFeature @Inject constructor(
             val candidate = provider.provide(ctx) ?: continue
             val identity = candidate.node?.let { NodeIdentity.of(it) }
             if (identity != null && scheduler.identityCount(instanceKey, identity) >= IDENTITY_CLICK_LIMIT) continue
+            // 最后一刻复核：候选扫描可能耗时；期间切走则放弃落点/performAction。
+            if (!targetStillForeground(pkg)) {
+                Log.d(TAG, "click-abort stale pkg=$pkg src=${candidate.source} last=${tracker.lastForeground()}")
+                return null
+            }
             val result = execute(candidate, tree, policy.forceGesture())
             candidate.groupId?.let { scheduler.recordGroupAction(pkg, it) }
             if (identity != null) {
@@ -478,7 +520,9 @@ class AdSkipFeature @Inject constructor(
             delay(clickVerifyMs)
             val current = tracker.current(pkg) ?: return@launch
             if (current.instance != mark.instance) return@launch
-            val picked = treeProvider.currentTree(pkg = pkg) ?: return@launch
+            if (!targetStillForeground(pkg)) return@launch
+            val picked = treeProvider.currentTree(pkg = pkg, allowForeignFallback = false) ?: return@launch
+            if (picked.rootPkg != pkg) return@launch
             val found = NodeIdentity.find(picked.tree.root, identity) ?: return@launch
             val stillPresent = ClickVerifier.signature(found) == signature
             if (!stillPresent) return@launch

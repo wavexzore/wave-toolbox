@@ -5,12 +5,32 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** D-226 系统选择器豁免：名单判定（相册-发送被误点修复）。 */
+/** D-226 系统界面豁免：名单判定（相册-发送被误点修复；2026-10-19 收入系统设置、桌面/AOD）。 */
 class SystemPickerTest {
 
     @Test
     fun `intentresolver 豁免`() {
         assertTrue(SystemPicker.exempt("com.android.intentresolver"))
+    }
+
+    @Test
+    fun `系统设置豁免`() {
+        // 无障碍服务/特性开关位于系统设置，禁止自动点击「关闭」。
+        assertTrue(SystemPicker.exempt("com.android.settings"))
+    }
+
+    @Test
+    fun `息屏显示豁免`() {
+        assertTrue(SystemPicker.exempt("com.miui.aod"))
+    }
+
+    @Test
+    fun `桌面包按运行时集合豁免`() {
+        val home = setOf("com.miui.home", "com.google.android.apps.nexuslauncher")
+        assertTrue(SystemPicker.exempt("com.miui.home", home))
+        assertTrue(SystemPicker.exempt("com.google.android.apps.nexuslauncher", home))
+        assertFalse(SystemPicker.exempt("com.tencent.mm", home))
+        assertFalse(SystemPicker.exempt("com.miui.home", emptySet()))
     }
 
     @Test
@@ -22,7 +42,7 @@ class SystemPickerTest {
     }
 
     @Test
-    fun `名单初始仅 intentresolver`() {
-        assertEquals(setOf("com.android.intentresolver"), SystemPicker.PKGS)
+    fun `静态名单仅系统选择器与系统设置`() {
+        assertEquals(setOf("com.android.intentresolver", "com.android.settings"), SystemPicker.PKGS)
     }
 }

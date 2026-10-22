@@ -183,6 +183,25 @@ class AdSkipInfraTest {
     }
 
     @Test
+    fun crossPackageBoundaryInvalidatesStaleHeartbeatTarget() {
+        // 2026-10-19：A 的心跳在用户切到自身包后必须立即失效，不允许继续扫描新前台。
+        val t = tracker()
+        fakeNow = 0
+        t.onForeground("a", "com.a.MainActivity")
+        assertTrue(t.isForeground("a"))
+        t.noteForeground("com.wavexzore.toolbox")
+        assertFalse(t.isForeground("a"))
+        assertTrue(t.isForeground("com.wavexzore.toolbox"))
+    }
+
+    @Test
+    fun unknownForegroundTokenDoesNotBlockFirstAttempt() {
+        // 服务在 App 已前台后才连上：令牌尚未建立时放行，避免首次进入零尝试。
+        val t = tracker()
+        assertTrue(t.isForeground("a"))
+    }
+
+    @Test
     fun splashInAppRefreshResetsOnNewActivity() {
         // splash + profile 开启刷新：同包新真实 Activity（窗口期早已过期）→ 新实例/新窗口。
         val t = tracker(bounds = { Bounds.FULL })

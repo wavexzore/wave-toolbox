@@ -105,21 +105,40 @@ object NodeAdapter {
     }
 }
 
+/**
+ * 目标包取树时的活动窗回退守卫（纯逻辑，JVM 可测）：
+ * 请求的是其它包时，只允许回退到「能确认归属且非工具箱自身」的活动窗。
+ * 自身窗口会让「自动跳过」等文案命中跳过关键词、把特性开关点掉；归属未知时同样
+ * 放弃（宁可不点，不误点）。
+ */
+internal fun allowsActiveWindowFallback(
+    requestedPkg: String?,
+    activeRootPkg: String?,
+    selfPkg: String,
+): Boolean = requestedPkg == null || requestedPkg == selfPkg ||
+    (activeRootPkg != null && activeRootPkg != selfPkg)
+
 /** 当前活动窗口树提供器（服务未连接/窗口缺失时返回 null）。 */
 @Singleton
 class WindowTreeProvider @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
-
     data class Picked(val tree: NodeAdapter.Tree, val displayId: Int, val windowType: Int, val rootPkg: String?)
 
     /**
      * 取目标包所在窗口的树；多显示器（如背屏）时按 [displayId]/[pkg] 精确选择：
      * 1. displayId+pkg 命中的 focused/active 应用窗口；
      * 2. 退化为 pkg 命中 / focused 窗口；
-     * 3. 最后退化为 rootInActiveWindow。
+     * 3. 最后退化为 rootInActiveWindow（仅 [allowForeignFallback] 为 true 时）。
+     *
+     * [allowForeignFallback] = false 时只返回 root 包名严格等于 [pkg] 的窗口树，
+     * 供自动点击链使用（李跳跳同款「窗口身份优先」约束，避免旧目标扫描新前台）。
      */
-    fun currentTree(pkg: String? = null, displayId: Int? = null): Picked? {
+    fun currentTree(
+        pkg: String? = null,
+        displayId: Int? = null,
+        allowForeignFallback: Boolean = true,
+    ): Picked? {
         val service = SelectToSpeakService.instance ?: return null
         val metrics = context.resources.displayMetrics
 
@@ -142,8 +161,23 @@ class WindowTreeProvider @Inject constructor(
             ?: pick { it.isActive }
             ?: windows.firstOrNull { runCatching { it.root?.packageName?.toString() == pkg && (displayId == null || displayIdOf(it) == displayId) }.getOrDefault(false) }
 
+        val activeRoot = runCatching { service.rootInActiveWindow }.getOrNull()
+        val fallbackRoot = if (allowForeignFallback) {
+            // 误操作修复（2026-10-19）：为其它包取树时，禁止活动窗回退到工具箱自身。
+            // 目标 App 已切到后台/自身包时，rootInActiveWindow 会返回工具箱 UI——其中
+            // 「自动跳过」等自建文案会命中跳过关键词，导致把自己特性开关点掉。
+            activeRoot?.takeIf { candidate ->
+                allowsActiveWindowFallback(
+                    requestedPkg = pkg,
+                    activeRootPkg = runCatching { candidate.packageName?.toString() }.getOrNull(),
+                    selfPkg = context.packageName,
+                )
+            }
+        } else {
+            null
+        }
         val root = window?.let { runCatching { it.root }.getOrNull() }
-            ?: runCatching { service.rootInActiveWindow }.getOrNull()
+            ?: fallbackRoot
             ?: return null
 
         val tree = runCatching { NodeAdapter.fromRoot(root, metrics.widthPixels, metrics.heightPixels) }.getOrNull() ?: return null
