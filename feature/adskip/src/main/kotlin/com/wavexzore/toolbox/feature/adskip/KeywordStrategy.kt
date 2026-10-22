@@ -4,6 +4,7 @@ import com.wavexzore.toolbox.core.accessibility.action.AndroidNodeView
 import com.wavexzore.toolbox.core.selector.NodeFilters
 import com.wavexzore.toolbox.core.selector.NodeView
 import com.wavexzore.toolbox.core.selector.ResourceMatcher
+import kotlin.math.abs
 
 /**
  * 关键词跳过策略（T-002；李跳跳 `LttService.e`/`c` 语义移植，纯 JVM 可测）。
@@ -29,6 +30,16 @@ object KeywordStrategy {
     private val CORNER_KEYWORDS = setOf("×", "✕")
     private const val CONSTRAINT_TOP_RATIO = 0.35f
     private const val CONSTRAINT_RIGHT_RATIO = 0.45f
+
+    /**
+     * 页内浮层判定（D-236；2026-10-22 浮窗误点修复）：树根的直接子节点若只占屏幕一小块、
+     * 且不是全宽贴顶横幅，则视为应用内悬浮容器；其内部的通用 keyword/vid 不予点击
+     * （规则包显式追加的关键词/选择器不受影响）。
+     */
+    private const val FLOAT_PANEL_MAX_AREA = 0.35f
+    private const val FLOAT_PANEL_MAX_WIDTH = 0.95f
+    private const val FLOAT_PANEL_MIN_TOP = 0.08f
+    private const val FLOAT_PANEL_CENTER_TOLERANCE = 0.08f
 
     val DEFAULT_KEYWORDS = listOf("跳过", "关闭", "×", "✕", "跳过广告", "关闭广告", "我知道了")
     val DEFAULT_EXCLUDES = listOf("跳过登录", "跳过引导", "跳过介绍", "跳过更新", "跳过设置", "关闭会员", "关闭提醒")
@@ -67,7 +78,7 @@ object KeywordStrategy {
     ): List<Pick> {
         val keywords = DEFAULT_KEYWORDS + extraKeywords
         val candidates = ArrayList<Pick>(8)
-        collect(root, keywords, excludes, screenWidth, screenHeight, candidates)
+        collect(root, null, keywords, extraKeywords, excludes, screenWidth, screenHeight, candidates)
         return candidates.sortedWith(comparator(screenHeight))
     }
 
@@ -77,20 +88,28 @@ object KeywordStrategy {
 
     private fun collect(
         node: NodeView,
+        container: NodeView?,
         keywords: List<String>,
+        extraKeywords: List<String>,
         excludes: List<String>,
         screenWidth: Int,
         screenHeight: Int,
         out: MutableList<Pick>,
     ) {
+        // 顶层容器（root 的直接子节点）判浮层；candidate 自身是容器时不据此拦截。
+        val inFloatingPanel = container != null && container !== node &&
+            isFloatingPanel(container, screenWidth, screenHeight)
         var matchedPick: Pick? = null
         val raw = node.text ?: node.contentDescription
         if (raw != null) {
             val text = raw.trim()
             if (text.isNotEmpty() && text.length <= MAX_TEXT_LEN) {
                 val matchedKeyword = keywords.firstOrNull { text.contains(it) }
+                val explicit = matchedKeyword != null && matchedKeyword in extraKeywords
+                val floatBlocked = matchedKeyword != null && matchedKeyword in DEFAULT_KEYWORDS && !explicit
                 if (matchedKeyword != null && excludes.none { text.contains(it) } && passesFilters(node, screenWidth, screenHeight) &&
-                    passesConstraint(node, matchedKeyword, screenWidth, screenHeight)
+                    passesConstraint(node, matchedKeyword, screenWidth, screenHeight) &&
+                    !(inFloatingPanel && floatBlocked)
                 ) {
                     matchedPick = Pick(node, matchedKeyword)
                 }
@@ -98,12 +117,46 @@ object KeywordStrategy {
         }
         if (matchedPick == null) {
             val vidKeyword = DEFAULT_VID_KEYWORDS.firstOrNull { ResourceMatcher.vidContains(node.viewId, it) }
-            if (vidKeyword != null && passesFilters(node, screenWidth, screenHeight)) {
+            if (vidKeyword != null && passesFilters(node, screenWidth, screenHeight) &&
+                passesVidConstraint(node, vidKeyword, screenWidth, screenHeight) &&
+                !(inFloatingPanel && vidKeyword == "close")
+            ) {
                 matchedPick = Pick(node, "vid:$vidKeyword", source = "vid")
             }
         }
         matchedPick?.let { out += it }
-        node.children.forEach { collect(it, keywords, excludes, screenWidth, screenHeight, out) }
+        node.children.forEach { child -> collect(child, container ?: child, keywords, extraKeywords, excludes, screenWidth, screenHeight, out) }
+    }
+
+    /**
+     * 页内浮层容器：面积 < 35% 屏、非全宽（不是顶部/底部横幅）、顶部下沉 > 8%，
+     * 且**非水平居中**（模态 Dialog 通常左右对称，需保持既可关闭）。
+     * 直接叶子（children 为空）不判浮层——保持既有「按钮即候选」语义。
+     */
+    internal fun isFloatingPanel(container: NodeView, screenWidth: Int, screenHeight: Int): Boolean {
+        if (screenWidth <= 0 || screenHeight <= 0) return false
+        if (container.children.isEmpty()) return false
+        val b = container.bounds
+        if (b.width <= 0 || b.height <= 0) return false
+        val areaRatio = (b.width.toLong() * b.height.toLong()).toDouble() / (screenWidth.toLong() * screenHeight.toLong())
+        if (areaRatio >= FLOAT_PANEL_MAX_AREA) return false
+        if (b.width >= screenWidth * FLOAT_PANEL_MAX_WIDTH) return false
+        if (b.top <= screenHeight * FLOAT_PANEL_MIN_TOP) return false
+        // 居中弹窗豁免：悬浮球/小窗通常贴边，Dialog 左右留白对称。
+        val centered = abs(b.left - (screenWidth - b.right)) <= screenWidth * FLOAT_PANEL_CENTER_TOLERANCE
+        if (centered) return false
+        return true
+    }
+
+    /** vid 关键词空间约束（D-236）：`close` 只认顶部/右上角或底部右侧，避免浮窗中部 × 被当广告关闭。 */
+    private fun passesVidConstraint(node: NodeView, keyword: String, screenWidth: Int, screenHeight: Int): Boolean {
+        if (keyword != "close") return true
+        if (screenWidth <= 0 || screenHeight <= 0) return true
+        val topArea = node.bounds.top < screenHeight * CONSTRAINT_TOP_RATIO
+        val rightHalf = node.bounds.left > screenWidth * CONSTRAINT_RIGHT_RATIO
+        if (topArea && rightHalf) return true
+        // 底部右侧（部分开屏把关闭放在右下角）。
+        return node.bounds.top > screenHeight * 0.6f && node.bounds.left > screenWidth * 0.55f
     }
 
     /** D-104 过滤链（任一不过即弃；R-209 起由 [NodeFilters] 唯一实现）。 */

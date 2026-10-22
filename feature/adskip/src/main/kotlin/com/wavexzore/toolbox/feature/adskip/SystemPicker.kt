@@ -15,14 +15,18 @@ package com.wavexzore.toolbox.feature.adskip
  *
  * 选择器不是广告：命中名单的包整体不参与自动点击；与运行模式无关（splash/any 一致豁免，
  * Q-212）；与 [PkgMode] 无关；系统设置的内置规则包保留但不再可达。
+ * 2026-10-22（D-238）：补 `com.android.systemui` / `miui.systemui.plugin`——通知栏、
+ * 锁屏、系统插件不是广告，真机日志显示它们仍会被通用兜底扫描（无误点但浪费预算）。
  * 名单扩展需真机实测证据（如文件选择器 `com.android.documentsui` 暂未收）。
  */
 internal object SystemPicker {
 
-    /** 系统界面包名（分享/「打开方式」选择器 + 系统设置）。 */
+    /** 系统界面包名（分享/「打开方式」选择器 + 系统设置 + 系统 UI 宿主）。 */
     val PKGS: Set<String> = setOf(
         "com.android.intentresolver",
         "com.android.settings",
+        "com.android.systemui",
+        "miui.systemui.plugin",
     )
 
     /** 息屏显示（AOD）包：桌面/息屏不是广告，对齐李跳跳白名单。 */

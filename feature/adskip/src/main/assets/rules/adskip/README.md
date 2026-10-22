@@ -35,7 +35,7 @@
 | `actionMaximum` | int | 1 | 同实例最大执行次数 |
 | `delayMs` | long | 150 | 组级年轻窗口延迟毫秒。**v2 起生效**（默认同旧值；取命中组最小值） |
 | `settleMs` | long | 350 | **v2 新增**：`activity` 区域稳定期（0~2000） |
-| `popupAware` | bool? | null | **v2 新增**：弹窗窗口放行。null=按运行模式：`splash` 拦、`any` 放行（Q-206 决议）；显式 true/false 恒定 |
+| `popupAware` | bool? | null | **v2 新增**：弹窗窗口放行。null=按运行模式：`splash` 拦、`any` 放行（Q-206 决议）；显式 true/false 恒定。**D-235（2026-10-22）**：非 Activity 的同包浮窗（PopupWindow/OVERLAY）恒按弹窗上下文处理，`any` 模式也需显式 `true` + `zone=popup` 才参与 |
 | `suppressGeneric` | bool | false | **v2 新增**：本组命中活动页时压制通用 keyword/vid 回退 |
 
 ## 执行优先级（T-002/T-005；T-203 起为 Provider 链）
@@ -81,3 +81,4 @@
 2. 坏文件隔离：单文件解析失败只进错误列表，不影响其它包。
 3. 每包文件独立（便于回归与覆盖）；同名 pkg 用户包整包覆盖内置。
 4. v2 字段治理：`zone=activity` 应同时给出 `activityIds`；`popupAware=true` 需在真机核对（弹窗默认保守）。
+5. 浮窗/页内浮层（D-235/D-236）：同包非 Activity 窗口与「小块非居中浮层」默认只走显式规则；通用关键词/vid 不参与，避免把应用内悬浮窗的 × 点掉。

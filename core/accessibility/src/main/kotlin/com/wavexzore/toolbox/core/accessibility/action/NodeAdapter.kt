@@ -123,7 +123,30 @@ internal fun allowsActiveWindowFallback(
 class WindowTreeProvider @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
-    data class Picked(val tree: NodeAdapter.Tree, val displayId: Int, val windowType: Int, val rootPkg: String?)
+    data class Picked(
+        val tree: NodeAdapter.Tree,
+        val displayId: Int,
+        val windowType: Int,
+        val rootPkg: String?,
+        /** 窗口外框（D-235；用于主窗口/Dialog/浮窗判定，不按 root 节点内容判定）。 */
+        val windowBounds: Rect? = null,
+        val isActive: Boolean = false,
+        val isFocused: Boolean = false,
+        val windowId: Int = -1,
+    )
+
+    /** 不建树的窗口元数据（D-235：先判形态再决定是否扫描，避免浮窗场景白建 2500 节点）。 */
+    data class WindowInfo(
+        val displayId: Int,
+        val windowType: Int,
+        val rootPkg: String?,
+        val bounds: Rect?,
+        val isActive: Boolean,
+        val isFocused: Boolean,
+        val windowId: Int,
+    )
+
+    private class Selected(val window: AccessibilityWindowInfo?, val root: AccessibilityNodeInfo)
 
     /**
      * 取目标包所在窗口的树；多显示器（如背屏）时按 [displayId]/[pkg] 精确选择：
@@ -139,8 +162,42 @@ class WindowTreeProvider @Inject constructor(
         displayId: Int? = null,
         allowForeignFallback: Boolean = true,
     ): Picked? {
-        val service = SelectToSpeakService.instance ?: return null
+        val selected = selectWindow(pkg, displayId, allowForeignFallback) ?: return null
+        val info = infoOf(selected)
         val metrics = context.resources.displayMetrics
+        val tree = runCatching {
+            NodeAdapter.fromRoot(selected.root, metrics.widthPixels, metrics.heightPixels)
+        }.getOrNull() ?: return null
+        return Picked(
+            tree = tree,
+            displayId = info.displayId,
+            windowType = info.windowType,
+            rootPkg = info.rootPkg,
+            windowBounds = info.bounds,
+            isActive = info.isActive,
+            isFocused = info.isFocused,
+            windowId = info.windowId,
+        )
+    }
+
+    /**
+     * 目标包当前窗口的元数据（不建树；D-235）。
+     *
+     * 与 [currentTree] 共用同一选窗口径，供自动点击链「先判形态、后建树」：
+     * 浮窗/弹窗上下文可在建树前被拦下（保持旧路径的 CPU 语义）。
+     */
+    fun windowInfo(
+        pkg: String? = null,
+        displayId: Int? = null,
+        allowForeignFallback: Boolean = true,
+    ): WindowInfo? = selectWindow(pkg, displayId, allowForeignFallback)?.let(::infoOf)
+
+    private fun selectWindow(
+        pkg: String?,
+        displayId: Int?,
+        allowForeignFallback: Boolean,
+    ): Selected? {
+        val service = SelectToSpeakService.instance ?: return null
 
         val windows = runCatching { service.windows }.getOrNull().orEmpty()
         val applicationWindows = windows.filter { window ->
@@ -179,9 +236,28 @@ class WindowTreeProvider @Inject constructor(
         val root = window?.let { runCatching { it.root }.getOrNull() }
             ?: fallbackRoot
             ?: return null
+        return Selected(window, root)
+    }
 
-        val tree = runCatching { NodeAdapter.fromRoot(root, metrics.widthPixels, metrics.heightPixels) }.getOrNull() ?: return null
-        return Picked(tree, window?.let(::displayIdOf) ?: 0, window?.type ?: -1, runCatching { root.packageName?.toString() }.getOrNull())
+    private fun infoOf(selected: Selected): WindowInfo {
+        val window = selected.window
+        return WindowInfo(
+            displayId = window?.let(::displayIdOf) ?: 0,
+            windowType = window?.type ?: -1,
+            rootPkg = runCatching { selected.root.packageName?.toString() }.getOrNull(),
+            bounds = windowBounds(window, selected.root),
+            isActive = window?.isActive ?: false,
+            isFocused = window?.isFocused ?: false,
+            windowId = window?.id ?: -1,
+        )
+    }
+
+    private fun windowBounds(window: AccessibilityWindowInfo?, root: AccessibilityNodeInfo): Rect? {
+        val raw = android.graphics.Rect()
+        val ok = runCatching {
+            if (window != null) window.getBoundsInScreen(raw) else root.getBoundsInScreen(raw)
+        }.isSuccess
+        return if (ok) Rect(raw.left, raw.top, raw.right, raw.bottom) else null
     }
 
     /**

@@ -10,7 +10,9 @@ import com.wavexzore.toolbox.core.accessibility.action.ActionExecutor
 import com.wavexzore.toolbox.core.accessibility.action.AndroidNodeView
 import com.wavexzore.toolbox.core.accessibility.action.ClickVerifier
 import com.wavexzore.toolbox.core.accessibility.action.NodeAdapter
+import com.wavexzore.toolbox.core.accessibility.action.SurfaceKind
 import com.wavexzore.toolbox.core.accessibility.action.WindowTreeProvider
+import com.wavexzore.toolbox.core.accessibility.action.classifySurface
 import com.wavexzore.toolbox.core.common.text.ClassNames
 import com.wavexzore.toolbox.core.data.settings.SettingsRepository
 import com.wavexzore.toolbox.core.data.stats.StatsRepository
@@ -20,7 +22,9 @@ import com.wavexzore.toolbox.core.rules.model.RawRule
 import com.wavexzore.toolbox.core.rules.model.RuleAction
 import com.wavexzore.toolbox.core.rules.model.RulePosition
 import com.wavexzore.toolbox.core.selector.NodeView
+import com.wavexzore.toolbox.core.selector.Rect
 import com.wavexzore.toolbox.core.selector.SelectorEngine
+import com.wavexzore.toolbox.feature.adskip.infra.AdSdkSignatures
 import com.wavexzore.toolbox.feature.adskip.infra.AttemptScheduler
 import com.wavexzore.toolbox.feature.adskip.infra.Heartbeat
 import com.wavexzore.toolbox.feature.adskip.infra.OemQuirks
@@ -205,6 +209,35 @@ class AdSkipFeature @Inject constructor(
     private fun targetStillForeground(pkg: String): Boolean =
         tracker.isForeground(pkg) && treeProvider.isAppForeground(pkg)
 
+    /**
+     * 组准入用的页面标签（D-237）：优先最近真实 Activity——`mark.activity` 会被
+     * FrameLayout/TextView 等窗口级类名覆盖，`activityIds` 约束会因此失效。
+     */
+    private fun gatingActivity(pkg: String, mark: WindowTracker.Mark): String? =
+        lastRealActivity[pkg] ?: mark.activity
+
+    /**
+     * 弹窗上下文原因（D-235）：浮窗恒保守；Dialog 保持 Q-206（splash 拦、any 放行）。
+     * 其余仍交给 [SkipGate] 的类别链（`android.app.Dialog`/`*PopupWindow*`）。
+     */
+    private fun popupReasonFor(
+        pkg: String,
+        activity: String?,
+        runMode: String,
+        surface: SurfaceKind,
+    ): String? = when {
+        surface == SurfaceKind.FLOATING -> "float"
+        surface == SurfaceKind.DIALOG && runMode != AdSkipGroup.MODE_ANY -> "window"
+        else -> gate.blockReason(pkg, activity, runMode)
+    }
+
+    /** 弹窗上下文仅显式 popupAware/zone=popup 组可入（D-205）。 */
+    private fun allowsPopupContext(groups: List<AdSkipGroup>): Boolean =
+        groups.any { it.popupAware == true || it.effectiveZone == AdSkipGroup.ZONE_POPUP }
+
+    private fun rectText(rect: Rect?): String? =
+        rect?.let { "${it.left},${it.top},${it.right},${it.bottom}" }
+
     override fun onEvent(event: FeatureEvent) {
         _eventCount.value = _eventCount.value + 1
         val pkg = event.packageName ?: return
@@ -280,7 +313,7 @@ class AdSkipFeature @Inject constructor(
         // 组级 delayMs 接线（v2；缺省组=150 与旧值一致）；取命中组的最小值
         val delayMs = if (isFirstContent) {
             profileFactory.mergedGroups(pkg)
-                .filter { GroupGating.active(it, runMode, mark.activity) }
+                .filter { GroupGating.active(it, runMode, gatingActivity(pkg, mark)) }
                 .minOfOrNull { it.delayMs } ?: YOUNG_DELAY_MS
         } else {
             0L
@@ -333,7 +366,7 @@ class AdSkipFeature @Inject constructor(
 
     private fun groupMax(pkg: String, mark: WindowTracker.Mark, runMode: String): Int {
         // 未适配应用（组为空→GroupFallback 兜底）不走 maxOf：预算沿用模式默认（v1 等价），见 GroupFallback 注释
-        val groups = profileFactory.mergedGroups(pkg).filter { GroupGating.active(it, runMode, mark.activity) }
+        val groups = profileFactory.mergedGroups(pkg).filter { GroupGating.active(it, runMode, gatingActivity(pkg, mark)) }
         return groups.maxOfOrNull { it.actionMaximum } ?: if (runMode == AdSkipGroup.MODE_ANY) 2 else 1
     }
 
@@ -368,10 +401,10 @@ class AdSkipFeature @Inject constructor(
             if (index < maxAttempts - 1) delay(ATTEMPT_INTERVAL_MS)
         }
         if (scheduler.onceMiss(instanceKey)) {
-            val probe = treeProvider.currentTree(pkg = pkg, allowForeignFallback = false)
+            val probe = treeProvider.currentTree(pkg = pkg, displayId = 0, allowForeignFallback = false)
             Log.d(
                 TAG,
-                "no-candidate pkg=$pkg act=${mark.activity} " +
+                "no-candidate pkg=$pkg act=${gatingActivity(pkg, mark)} " +
                     "nodes=${probe?.tree?.nodeCount}",
             )
         }
@@ -386,28 +419,35 @@ class AdSkipFeature @Inject constructor(
             return null
         }
         val instanceKey = tracker.instanceKey(pkg, mark)
-        val mergedActive = profileFactory.mergedGroups(pkg).filter { GroupGating.active(it, runMode, mark.activity) }
+        val gating = gatingActivity(pkg, mark)
+        val mergedActive = profileFactory.mergedGroups(pkg).filter { GroupGating.active(it, runMode, gating) }
         if (mergedActive.isEmpty() && scheduler.oncePopup("$pkg#${mark.instance}:fallback")) {
-            Log.d(TAG, "fallback-enter pkg=$pkg act=${mark.activity}")
+            Log.d(TAG, "fallback-enter pkg=$pkg act=$gating")
         }
         val active = GroupFallback.resolve(mergedActive)
 
-        // 保守模式（仅开屏）：弹窗窗口默认不碰（F1）——仅显式 popupAware/zone=popup 组参与（D-205）
-        val popupReason = gate.blockReason(pkg, mark.activity, runMode)
-        val popupContext = popupReason != null
-        if (popupContext && active.none { it.popupAware == true || it.effectiveZone == AdSkipGroup.ZONE_POPUP }) {
-            if (scheduler.oncePopup("$pkg#${mark.instance}")) {
-                val wb = treeProvider.focusedWindowBounds(pkg)
-                val dm = context.resources.displayMetrics
-                Log.d(TAG, "popup-skip pkg=$pkg cls=${mark.activity} ($popupReason) win=${wb?.let { "${it.left},${it.top},${it.right},${it.bottom}" }} screen=${dm.widthPixels}x${dm.heightPixels}")
+        // D-235：先用窗口元数据判形态（不建树）；浮窗恒保守、Dialog 保持 Q-206。
+        val dm = context.resources.displayMetrics
+        val info = treeProvider.windowInfo(pkg = pkg, displayId = 0, allowForeignFallback = false) ?: return null
+        if (info.rootPkg != pkg) {
+            Log.d(TAG, "try-abort owner-mismatch pkg=$pkg root=${info.rootPkg}")
+            return null
+        }
+        val preSurface = classifySurface(info.windowType, info.bounds, dm.widthPixels, dm.heightPixels)
+        val preReason = popupReasonFor(pkg, mark.activity, runMode, preSurface)
+        if (preReason != null && !allowsPopupContext(active)) {
+            if (scheduler.oncePopup("$pkg#${mark.instance}:popup-skip")) {
+                Log.d(
+                    TAG,
+                    "popup-skip pkg=$pkg cls=$gating ($preReason) surface=$preSurface " +
+                        "winType=${info.windowType} win=${rectText(info.bounds)} id=${info.windowId} " +
+                        "screen=${dm.widthPixels}x${dm.heightPixels}",
+                )
             }
             return null
         }
-        if (popupContext && scheduler.oncePopup("$pkg#${mark.instance}")) {
-            Log.d(TAG, "popup-enter pkg=$pkg cls=${mark.activity} ($popupReason)")
-        }
 
-        val picked = treeProvider.currentTree(pkg = pkg, allowForeignFallback = false) ?: return null
+        val picked = treeProvider.currentTree(pkg = pkg, displayId = 0, allowForeignFallback = false) ?: return null
         // 严格身份（对齐李跳跳）：树根包名必须等于尝试包。窗口提供器已禁用跨包回退，
         // 这里再兜一道硬门槛——自身包、其它 App、归属未知一律拒绝。
         if (picked.rootPkg != pkg) {
@@ -415,15 +455,44 @@ class AdSkipFeature @Inject constructor(
             return null
         }
         val tree = picked.tree
+        // 窗口竞态二次判定：预判与建树之间窗口可能已切换，最终以 picked 为准。
+        val surface = classifySurface(picked.windowType, picked.windowBounds, tree.screenWidth, tree.screenHeight)
+        val popupReason = popupReasonFor(pkg, mark.activity, runMode, surface)
+        val popupContext = popupReason != null
+        if (surface == SurfaceKind.FLOATING && scheduler.oncePopup("$pkg#${mark.instance}:surface")) {
+            Log.d(
+                TAG,
+                "surface pkg=$pkg kind=$surface type=${picked.windowType} active=${picked.isActive} " +
+                    "focused=${picked.isFocused} win=${rectText(picked.windowBounds)} id=${picked.windowId}",
+            )
+        }
+        if (popupContext && !allowsPopupContext(active)) {
+            if (scheduler.oncePopup("$pkg#${mark.instance}:post-skip")) {
+                Log.d(
+                    TAG,
+                    "popup-skip pkg=$pkg cls=$gating ($popupReason) surface=$surface " +
+                        "win=${rectText(picked.windowBounds)} id=${picked.windowId}",
+                )
+            }
+            return null
+        }
+        if (popupContext && scheduler.oncePopup("$pkg#${mark.instance}:popup-enter")) {
+            Log.d(TAG, "popup-enter pkg=$pkg cls=$gating ($popupReason) surface=$surface")
+        }
+        // L3 仅识别+日志（D-237）：广告 SDK 指纹不参与放行/拦截决策。
+        if (scheduler.oncePopup("$pkg#${mark.instance}:ads")) {
+            val providers = AdSdkSignatures.detect(tree.root, gating)
+            Log.d(TAG, "ad-surface pkg=$pkg act=$gating providers=${providers.ifEmpty { setOf("none") }.joinToString(",")}")
+        }
         val now = System.currentTimeMillis()
 
-        val zoneGroups = active.filter { ZoneGate.allows(it, popupContext, mark.activity, mark.activityAt, now) }
+        val zoneGroups = active.filter { ZoneGate.allows(it, popupContext, gating, mark.activityAt, now) }
         if (zoneGroups.isEmpty()) return null
 
         // 严格身份后树归属恒等于尝试包；抑制/手势按本包最近真实 Activity 解析
         // （mark.activity 会被 FrameLayout 等框架标签覆盖，B-209 继续保留）。
         val policy = profileFactory.profile(pkg)
-        val suppressActivity = lastRealActivity[pkg] ?: mark.activity
+        val suppressActivity = gating
         val suppressed = policy.suppressOn(suppressActivity)
             .flatMap { selector -> selectorEngine.findAll(tree.root, selector) }
             .map { NodeIdentity.of(it.node) }
@@ -436,7 +505,7 @@ class AdSkipFeature @Inject constructor(
             screenHeight = tree.screenHeight,
             groups = zoneGroups,
             profile = policy,
-            activity = mark.activity,
+            activity = gating,
             extraKeywords = extraKeywords + policy.keywordExtra() + zoneGroups.flatMap { it.keywords },
             suppressedIdentities = suppressed,
             skipKeyword = popupContext || zoneGroups.any { it.suppressGeneric },
@@ -461,7 +530,7 @@ class AdSkipFeature @Inject constructor(
                     scheduleVerify(pkg, mark, instanceKey, identity, candidate.node, runMode)
                 }
             }
-            record(pkg, candidate.source, result, now, mark.activity, zone = zoneOf(popupContext, runMode))
+            record(pkg, candidate.source, result, now, gating, zone = zoneOf(popupContext, runMode))
             return Outcome(result.ok, result.mechanism, candidate.source)
         }
         return null
@@ -521,7 +590,7 @@ class AdSkipFeature @Inject constructor(
             val current = tracker.current(pkg) ?: return@launch
             if (current.instance != mark.instance) return@launch
             if (!targetStillForeground(pkg)) return@launch
-            val picked = treeProvider.currentTree(pkg = pkg, allowForeignFallback = false) ?: return@launch
+            val picked = treeProvider.currentTree(pkg = pkg, displayId = 0, allowForeignFallback = false) ?: return@launch
             if (picked.rootPkg != pkg) return@launch
             val found = NodeIdentity.find(picked.tree.root, identity) ?: return@launch
             val stillPresent = ClickVerifier.signature(found) == signature

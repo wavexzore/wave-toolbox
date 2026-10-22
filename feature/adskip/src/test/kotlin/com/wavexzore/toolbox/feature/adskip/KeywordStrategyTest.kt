@@ -279,4 +279,125 @@ class KeywordStrategyTest {
         )
         assertNotNull(KeywordStrategy.pick(root, screenWidth = 1000, screenHeight = 2600))
     }
+
+    // ---- 浮窗误点修复（D-236，2026-10-22）：页内浮层容器内的通用关键词不点 ----
+
+    @Test
+    fun floatingPanelNestedCloseRejected() {
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1200,2600], "children":[
+              { "class":"FrameLayout", "bounds":[100,700,700,1300], "children":[
+                { "text":"关闭", "class":"ImageView", "clickable":true, "bounds":[600,720,680,800] }
+              ]}
+            ]}
+            """.trimIndent(),
+        )
+        assertNull(KeywordStrategy.pick(root, screenWidth = 1200, screenHeight = 2600))
+    }
+
+    @Test
+    fun floatingPanelNestedSkipRejected() {
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1200,2600], "children":[
+              { "class":"FrameLayout", "bounds":[100,700,700,1300], "children":[
+                { "text":"跳过", "class":"TextView", "clickable":true, "bounds":[500,720,620,800] }
+              ]}
+            ]}
+            """.trimIndent(),
+        )
+        assertNull(KeywordStrategy.pick(root, screenWidth = 1200, screenHeight = 2600))
+    }
+
+    @Test
+    fun floatingPanelExplicitPackKeywordStillPicked() {
+        // 规则包显式追加的关键词=显式 opt-in，不受浮层默认拦截影响。
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1200,2600], "children":[
+              { "class":"FrameLayout", "bounds":[100,700,700,1300], "children":[
+                { "text":"关闭", "class":"ImageView", "clickable":true, "bounds":[600,720,680,800] }
+              ]}
+            ]}
+            """.trimIndent(),
+        )
+        assertNotNull(
+            KeywordStrategy.pick(root, extraKeywords = listOf("关闭"), screenWidth = 1200, screenHeight = 2600),
+        )
+    }
+
+    @Test
+    fun fullScreenAdContainerNestedSkipStillPicked() {
+        // 全屏广告容器（顶层子节点贴合屏幕）不受浮层规则影响。
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1200,2600], "children":[
+              { "class":"FrameLayout", "bounds":[0,0,1200,2600], "children":[
+                { "text":"跳过", "class":"TextView", "clickable":true, "bounds":[900,180,1100,260] }
+              ]}
+            ]}
+            """.trimIndent(),
+        )
+        assertNotNull(KeywordStrategy.pick(root, screenWidth = 1200, screenHeight = 2600))
+    }
+
+    @Test
+    fun centeredDialogCloseStillPicked() {
+        // 模态 Dialog 左右对称（非浮窗）：通用关键词仍需可点（f06 回归）。
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1080,2400], "children":[
+              { "class":"Dialog", "bounds":[100,900,980,1500], "children":[
+                { "text":"我知道了", "class":"Button", "clickable":true, "bounds":[400,1380,700,1450] }
+              ]}
+            ]}
+            """.trimIndent(),
+        )
+        assertNotNull(KeywordStrategy.pick(root, screenWidth = 1080, screenHeight = 2400))
+    }
+
+    @Test
+    fun vidCloseBottomRightStillPicked() {
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1200,2600], "children":[
+              { "class":"FrameLayout", "bounds":[0,0,1200,2600], "children":[
+                { "vid":"com.example:id/close", "class":"ImageView", "clickable":true, "bounds":[1050,2200,1130,2280] }
+              ]}
+            ]}
+            """.trimIndent(),
+        )
+        assertNotNull(KeywordStrategy.pick(root, screenWidth = 1200, screenHeight = 2600))
+    }
+
+    @Test
+    fun vidCloseMidScreenRejected() {
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1200,2600], "children":[
+              { "class":"FrameLayout", "bounds":[0,0,1200,2600], "children":[
+                { "vid":"com.example:id/close", "class":"ImageView", "clickable":true, "bounds":[100,1300,180,1380] }
+              ]}
+            ]}
+            """.trimIndent(),
+        )
+        assertNull(KeywordStrategy.pick(root, screenWidth = 1200, screenHeight = 2600))
+    }
+
+    @Test
+    fun vidCloseTopRightStillPicked() {
+        val root = tree(
+            """
+            { "class":"FrameLayout", "bounds":[0,0,1200,2600], "children":[
+              { "class":"FrameLayout", "bounds":[0,0,1200,2600], "children":[
+                { "vid":"com.example:id/close", "class":"ImageView", "clickable":true, "bounds":[900,180,980,260] }
+              ]}
+            ]}
+            """.trimIndent(),
+        )
+        val pick = KeywordStrategy.pick(root, screenWidth = 1200, screenHeight = 2600)
+        assertNotNull(pick)
+        assertEquals("vid:close", pick.matched)
+    }
 }

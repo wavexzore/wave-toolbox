@@ -42,7 +42,22 @@ class SystemPickerTest {
     }
 
     @Test
-    fun `静态名单仅系统选择器与系统设置`() {
-        assertEquals(setOf("com.android.intentresolver", "com.android.settings"), SystemPicker.PKGS)
+    fun `系统 UI 宿主豁免`() {
+        // 通知栏/锁屏/系统插件不是广告；真机日志显示通用兜底仍在扫描。
+        assertTrue(SystemPicker.exempt("com.android.systemui"))
+        assertTrue(SystemPicker.exempt("miui.systemui.plugin"))
+    }
+
+    @Test
+    fun `静态名单含选择器、设置与系统 UI`() {
+        assertEquals(
+            setOf(
+                "com.android.intentresolver",
+                "com.android.settings",
+                "com.android.systemui",
+                "miui.systemui.plugin",
+            ),
+            SystemPicker.PKGS,
+        )
     }
 }
