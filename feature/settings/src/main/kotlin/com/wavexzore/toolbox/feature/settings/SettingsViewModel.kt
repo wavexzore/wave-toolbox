@@ -8,6 +8,7 @@ import com.wavexzore.toolbox.core.accessibility.AccessibilitySelfHeal
 import com.wavexzore.toolbox.core.accessibility.AccessibilityServiceBootstrap
 import com.wavexzore.toolbox.core.accessibility.AccessibilityStateMonitor
 import com.wavexzore.toolbox.core.accessibility.action.RuleEngine
+import com.wavexzore.toolbox.core.accessibility.keepalive.KeepAliveHealth
 import com.wavexzore.toolbox.core.accessibility.pipeline.EventPipeline
 import com.wavexzore.toolbox.core.data.settings.SettingsRepository
 import com.wavexzore.toolbox.core.data.stats.StatsRepository
@@ -56,6 +57,7 @@ class SettingsViewModel @Inject constructor(
     private val pipeline: EventPipeline,
     private val stateMonitor: AccessibilityStateMonitor,
     private val selfHeal: AccessibilitySelfHeal,
+    private val keepAliveHealth: KeepAliveHealth,
     private val updateRepository: UpdateRepository,
 ) : ViewModel() {
 
@@ -65,6 +67,11 @@ class SettingsViewModel @Inject constructor(
     /** 自愈动作最近结果文案（null=尚未执行）。 */
     private val _healStatus = MutableStateFlow<String?>(null)
     val healStatus: StateFlow<String?> = _healStatus
+
+    /** 保活体检快照（FGS/无障碍/电池优化/OEM/开机自启）。 */
+    private val _keepAliveHealth = MutableStateFlow<KeepAliveHealth.Snapshot?>(null)
+    val keepAliveHealthState: StateFlow<KeepAliveHealth.Snapshot?> = _keepAliveHealth
+    private var healthRefreshing = false
 
     /**
      * 自愈行状态（授权 × 服务连接 × 引擎开关；2s 轮询，adb 授权后可自动反映）。
@@ -95,7 +102,29 @@ class SettingsViewModel @Inject constructor(
                 if (state == SelfHealState.NEEDS_REPAIR && selfHeal.isGranted()) maybeAutoHeal()
             }
         }
+        refreshKeepAliveHealth()
+        viewModelScope.launch {
+            while (true) {
+                delay(HEALTH_REFRESH_MS)
+                refreshKeepAliveHealth()
+            }
+        }
     }
+
+    /** 刷新保活体检（FGS 可能被系统延迟启动/回收，周期刷新）。 */
+    fun refreshKeepAliveHealth() {
+        if (healthRefreshing) return
+        healthRefreshing = true
+        viewModelScope.launch {
+            try {
+                _keepAliveHealth.value = keepAliveHealth.snapshot()
+            } finally {
+                healthRefreshing = false
+            }
+        }
+    }
+
+    fun openBatteryOptimizationSettings() = keepAliveHealth.openBatteryOptimizationSettings()
 
     private fun maybeAutoHeal() {
         // 执行中再次触发 → 排队，结束后补一次（避免守卫期状态变化丢失重试）
@@ -150,11 +179,20 @@ class SettingsViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
-    fun setEngineEnabled(enabled: Boolean) = viewModelScope.launch { settingsRepository.setEngineEnabled(enabled) }
+    fun setEngineEnabled(enabled: Boolean) = viewModelScope.launch {
+        settingsRepository.setEngineEnabled(enabled)
+        refreshKeepAliveHealth()
+    }
 
-    fun setKeepAliveEnabled(enabled: Boolean) = viewModelScope.launch { settingsRepository.setKeepAliveEnabled(enabled) }
+    fun setKeepAliveEnabled(enabled: Boolean) = viewModelScope.launch {
+        settingsRepository.setKeepAliveEnabled(enabled)
+        refreshKeepAliveHealth()
+    }
 
-    fun setBootAutostart(enabled: Boolean) = viewModelScope.launch { settingsRepository.setBootAutostartEnabled(enabled) }
+    fun setBootAutostart(enabled: Boolean) = viewModelScope.launch {
+        settingsRepository.setBootAutostartEnabled(enabled)
+        refreshKeepAliveHealth()
+    }
 
     fun setEventRecordEnabled(enabled: Boolean) = viewModelScope.launch { settingsRepository.setEventRecordEnabled(enabled) }
 
@@ -206,6 +244,9 @@ class SettingsViewModel @Inject constructor(
 
         /** NEEDS 去抖窗口：大于 1 个状态轮询周期，吸收 uiautomator 探针/系统抑制导致的 1s 级瞬断。 */
         const val NEEDS_GRACE_MS = 3_000L
+
+        /** 保活体检刷新间隔。 */
+        const val HEALTH_REFRESH_MS = 15_000L
     }
 }
 

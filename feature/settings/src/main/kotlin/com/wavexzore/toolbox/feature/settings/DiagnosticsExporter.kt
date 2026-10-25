@@ -4,7 +4,9 @@ import android.content.Context
 import android.os.Build
 import com.wavexzore.toolbox.core.accessibility.AccessibilityStateMonitor
 import com.wavexzore.toolbox.core.accessibility.action.RuleEngine
+import com.wavexzore.toolbox.core.accessibility.diagnostics.DisplayDiagnostics
 import com.wavexzore.toolbox.core.accessibility.feature.FeatureRegistry
+import com.wavexzore.toolbox.core.accessibility.keepalive.KeepAliveHealth
 import com.wavexzore.toolbox.core.accessibility.pipeline.EventPipeline
 import com.wavexzore.toolbox.core.common.dispatchers.AppDispatchers
 import com.wavexzore.toolbox.core.data.rules.RuleRepository
@@ -40,6 +42,8 @@ class DiagnosticsExporter @Inject constructor(
     private val stateMonitor: AccessibilityStateMonitor,
     private val pipeline: EventPipeline,
     private val ruleEngine: RuleEngine,
+    private val displayDiagnostics: DisplayDiagnostics,
+    private val keepAliveHealth: KeepAliveHealth,
     private val featureRegistry: FeatureRegistry,
     private val dispatchers: AppDispatchers,
     private val updateRepository: UpdateRepository,
@@ -56,7 +60,11 @@ class DiagnosticsExporter @Inject constructor(
         val entries = LinkedHashMap<String, ByteArray>()
 
         entries["device.txt"] = deviceInfo().toByteArray()
+        entries["displays.txt"] = displayInfo().toByteArray()
         entries["settings.txt"] = settingsInfo().toByteArray()
+        entries["keepalive.txt"] = runCatching {
+            keepAliveHealth.format(keepAliveHealth.snapshot())
+        }.getOrElse { "keepalive health failed: ${it.message}" }.toByteArray()
         entries["update.txt"] = updateInfo().toByteArray()
         entries["rules.json"] = runCatching {
             json.encodeToString(ListSerializer(RawRuleGroup.serializer()), ruleRepository.currentGroups())
@@ -94,6 +102,40 @@ class DiagnosticsExporter @Inject constructor(
         appendLine("abis=${Build.SUPPORTED_ABIS.joinToString(",")}")
         appendLine("appVersion=${appVersionName()}")
         appendLine("serviceEnabled=${stateMonitor.isEnabled()}")
+    }
+
+    /** 多屏诊断：每块 display 的尺寸/窗口/取树结果；主屏支持、副屏实验性。 */
+    private fun displayInfo(): String = buildString {
+        val report = runCatching { displayDiagnostics.snapshot() }
+            .getOrElse { t ->
+                appendLine("display diagnostics failed: ${t.message}")
+                return@buildString
+            }
+        appendLine("# ${report.note}")
+        report.displays.forEach { display ->
+            appendLine(
+                "display id=${display.id} name=${display.name} " +
+                    "size=${display.width}x${display.height} dpi=${display.densityDpi} " +
+                    "refresh=${String.format(Locale.US, "%.1f", display.refreshRate)} " +
+                    "state=${DisplayDiagnostics.displayStateText(display.state)} rotation=${display.rotation} " +
+                    "primary=${display.primary} support=${display.support}",
+            )
+            appendLine("  windows=${display.windows.size}")
+            display.windows.forEach { window ->
+                appendLine(
+                    "    window id=${window.id} type=${DisplayDiagnostics.windowTypeText(window.type)} " +
+                        "pkg=${window.rootPkg ?: "-"} focused=${window.focused} active=${window.active} " +
+                        "bounds=${window.bounds ?: "-"}",
+                )
+            }
+            appendLine(
+                "  tree ok=${display.tree.ok} root=${display.tree.rootPkg ?: "-"} " +
+                    "nodes=${display.tree.nodes} truncated=${display.tree.truncated} " +
+                    "windowType=${DisplayDiagnostics.windowTypeText(display.tree.windowType)} " +
+                    "bounds=${display.tree.bounds ?: "-"} " +
+                    "message=${display.tree.message ?: "-"}",
+            )
+        }
     }
 
     private suspend fun settingsInfo(): String = buildString {

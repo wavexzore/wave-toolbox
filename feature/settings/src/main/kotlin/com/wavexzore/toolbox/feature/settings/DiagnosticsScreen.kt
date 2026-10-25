@@ -2,6 +2,7 @@ package com.wavexzore.toolbox.feature.settings
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,6 +25,7 @@ import com.wavexzore.toolbox.core.design.components.WaveCard
 import com.wavexzore.toolbox.core.design.components.WaveNote
 import com.wavexzore.toolbox.core.design.components.WavePrimaryButton
 import com.wavexzore.toolbox.core.design.components.WaveScaffold
+import com.wavexzore.toolbox.core.design.components.WaveSectionLabel
 import com.wavexzore.toolbox.core.design.components.WaveTextAction
 import com.wavexzore.toolbox.core.design.components.WaveTopBar
 import com.wavexzore.toolbox.core.design.theme.Wave
@@ -47,6 +49,63 @@ fun DiagnosticsScreen(
         ) {
             WaveNote("打包设备信息、引擎设置、规则、7 天统计、事件/动作环与最近快照（约数百 KB）。")
             Spacer(Modifier.height(6.dp))
+
+            WaveSectionLabel("显示器")
+            WaveCard {
+                Text(
+                    uiState.displayNote,
+                    fontSize = 12.5.sp,
+                    color = Wave.Ink2,
+                    lineHeight = 18.sp,
+                )
+                uiState.displays.forEach { display ->
+                    Column(modifier = Modifier.padding(top = 10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                "Display ${display.id}",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.sp,
+                                color = Wave.Ink,
+                            )
+                            Text(
+                                if (display.primary) "主屏" else "副屏",
+                                fontSize = 12.sp,
+                                color = if (display.primary) Wave.Ink2 else Wave.RedTx,
+                            )
+                        }
+                        Text(
+                            "${display.width}×${display.height} · 窗口 ${display.windows.size} · ${display.support}",
+                            fontSize = 12.sp,
+                            color = Wave.Ink2,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                        Text(
+                            if (display.tree.ok) {
+                                "取树成功 · root=${display.tree.rootPkg ?: "-"} · ${display.tree.nodes} 节点" +
+                                    if (display.tree.truncated) "（截断）" else ""
+                            } else {
+                                "未取到树 · ${display.tree.message ?: "-"}"
+                            },
+                            fontSize = 11.5.sp,
+                            color = if (display.tree.ok) Wave.Ink3 else Wave.RedTx,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                }
+                if (uiState.displaysLoading) {
+                    Text("检测中…", fontSize = 12.sp, color = Wave.Ink3, modifier = Modifier.padding(top = 8.dp))
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    WaveTextAction("刷新显示器", onClick = viewModel::refreshDisplays)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
 
             WavePrimaryButton(
                 text = if (uiState.busy) "打包中…" else "生成诊断 zip",

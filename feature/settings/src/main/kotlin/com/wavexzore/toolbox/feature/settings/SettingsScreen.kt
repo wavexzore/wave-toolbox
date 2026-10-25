@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.wavexzore.toolbox.core.accessibility.keepalive.KeepAliveHealth
 import com.wavexzore.toolbox.core.data.settings.SettingsRepository
 import com.wavexzore.toolbox.core.design.components.WaveCard
 import com.wavexzore.toolbox.core.design.components.WaveChevron
@@ -74,6 +75,7 @@ fun SettingsScreen(
     val accessibilityEnabled by viewModel.accessibilityEnabled.collectAsStateWithLifecycle()
     val selfHealState by viewModel.selfHealState.collectAsStateWithLifecycle()
     val healStatus by viewModel.healStatus.collectAsStateWithLifecycle()
+    val keepAliveHealth by viewModel.keepAliveHealthState.collectAsStateWithLifecycle()
     val updateBadge by viewModel.updateBadge.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var dialog by rememberSaveable { mutableStateOf("") }
@@ -165,6 +167,22 @@ fun SettingsScreen(
                     subtitle = "开机后自动拉起常驻服务",
                     checked = uiState.bootAutostart,
                     onCheckedChange = viewModel::setBootAutostart,
+                )
+                WaveDivider()
+                WaveRow(
+                    title = "保活体检",
+                    subtitle = keepAliveHealth?.summary ?: "检测中…",
+                    leading = {
+                        WaveIconBox(
+                            Icons.Filled.Security,
+                            if (keepAliveHealth?.healthy == true) WaveTone.Green else WaveTone.Yellow,
+                        )
+                    },
+                    onClick = {
+                        viewModel.refreshKeepAliveHealth()
+                        dialog = "keepalive"
+                    },
+                    trailing = { WaveChevron() },
                 )
                 WaveDivider()
                 WaveSwitchRow(
@@ -354,6 +372,90 @@ fun SettingsScreen(
             onOpenSettings = viewModel::openAccessibilitySettings,
             onDismiss = { dialog = "" },
         )
+        "keepalive" -> KeepAliveHealthDialog(
+            snapshot = keepAliveHealth,
+            onOpenBattery = viewModel::openBatteryOptimizationSettings,
+            onDismiss = { dialog = "" },
+        )
+    }
+}
+
+@Composable
+private fun KeepAliveHealthDialog(
+    snapshot: KeepAliveHealth.Snapshot?,
+    onOpenBattery: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Wave.Card,
+        title = { Text("保活体检", fontSize = 16.sp) },
+        text = {
+            if (snapshot == null) {
+                Text("检测中…", fontSize = 13.sp, color = Wave.Ink2)
+            } else {
+                Column {
+                    HealthLine("前台服务", snapshot.foregroundServiceRunning)
+                    HealthLine("无障碍服务", snapshot.accessibilityEnabled)
+                    HealthLine("电池优化已豁免", snapshot.batteryOptimizationIgnored)
+                    HealthLine("开机自启", snapshot.bootAutostart)
+                    Text(
+                        "厂商：${snapshot.manufacturer}",
+                        fontSize = 12.5.sp,
+                        color = Wave.Ink2,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                    Text(
+                        snapshot.oemHint,
+                        fontSize = 12.sp,
+                        color = Wave.Ink3,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    if (snapshot.warnings.isNotEmpty()) {
+                        Text(
+                            "提示：${snapshot.warnings.joinToString("；")}",
+                            fontSize = 12.sp,
+                            color = Wave.YellowTx,
+                            lineHeight = 18.sp,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                    Text(
+                        "同进程 best-effort：进程被系统强杀后依赖系统重绑/开机恢复，不做跨进程守护。",
+                        fontSize = 11.5.sp,
+                        color = Wave.Ink3,
+                        lineHeight = 17.sp,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton({ onDismiss() }) { Text("知道了", color = Wave.Ink) }
+        },
+        dismissButton = {
+            TextButton({
+                onOpenBattery()
+                onDismiss()
+            }) { Text("电池优化设置", color = Wave.Ink2) }
+        },
+    )
+}
+
+@Composable
+private fun HealthLine(label: String, ok: Boolean) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            if (ok) "✓" else "!",
+            fontSize = 13.sp,
+            color = if (ok) Wave.GreenTx else Wave.YellowTx,
+            modifier = Modifier.width(18.dp),
+        )
+        Text(label, fontSize = 13.sp, color = Wave.Ink2)
     }
 }
 

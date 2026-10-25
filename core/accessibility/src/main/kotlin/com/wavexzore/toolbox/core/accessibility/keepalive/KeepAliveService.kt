@@ -49,6 +49,7 @@ class KeepAliveService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         createChannel()
         startForegroundCompat(buildNotification())
         scope.launch {
@@ -75,6 +76,7 @@ class KeepAliveService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        isRunning = false
         scope.cancel()
         Log.i(TAG, "onDestroy")
         super.onDestroy()
@@ -147,6 +149,11 @@ class KeepAliveService : Service() {
         private const val CHANNEL_ID = "keepalive"
         private const val NOTIFICATION_ID = 1001
         private const val ACTION_REFRESH = "com.wavexzore.toolbox.action.KEEPALIVE_REFRESH"
+
+        /** 当前进程内 FGS 是否在运行（体检用；进程被杀后自然为 false）。 */
+        @Volatile
+        var isRunning: Boolean = false
+            private set
 
         /** 启动（重复调用安全；后台限制时静默失败由调用方处理）。 */
         fun start(context: Context) {
