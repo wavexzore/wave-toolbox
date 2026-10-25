@@ -317,4 +317,51 @@ class TaskExecutorTest {
         val failed = progress.filterIsInstance<TaskProgress.StepFinished>().first()
         assertTrue(!failed.ok && failed.skipped)
     }
+
+    @Test
+    fun `too many steps fail closed before running`() = runTest {
+        val steps = List(TaskSafety.MAX_STEPS + 1) { Step.Delay(1) }
+        val progress = TaskExecutor(FakeTaskEnv()).run(
+            TaskDef(id = "t", pkg = "com.x", steps = steps),
+        ).toList()
+        assertEquals(TaskProgress.Status.FAILED, statusOf(progress))
+        assertTrue((progress.last() as TaskProgress.Finished).reason!!.contains("步骤数超限"))
+        assertEquals(2, progress.size)
+    }
+
+    @Test
+    fun `total duration cap fails task`() = runTest {
+        val progress = TaskExecutor(FakeTaskEnv()).run(
+            TaskDef(
+                id = "t",
+                pkg = "com.x",
+                maxDurationMs = 1_000,
+                steps = listOf(Step.Delay(5_000)),
+            ),
+        ).toList()
+        assertEquals(TaskProgress.Status.FAILED, statusOf(progress))
+        assertTrue((progress.last() as TaskProgress.Finished).reason!!.contains("总时长超限"))
+    }
+
+    @Test
+    fun `delay is clamped by safety limit`() = runTest {
+        val progress = TaskExecutor(FakeTaskEnv()).run(
+            task(Step.Delay(99_999)),
+        ).toList()
+        assertEquals(TaskProgress.Status.SUCCESS, statusOf(progress))
+        assertTrue(currentTime <= TaskSafety.MAX_DELAY_MS + 100)
+    }
+
+    @Test
+    fun `click retry is clamped by safety limit`() = runTest {
+        val env = FakeTaskEnv().apply {
+            tree = TestTree.root(TestTree.node(text = "确定"))
+            clickScript.addAll(List(10) { false })
+        }
+        val progress = TaskExecutor(env).run(
+            task(Step.Click("[text=确定]", retry = 99, timeoutMs = 5_000)),
+        ).toList()
+        assertEquals(TaskProgress.Status.FAILED, statusOf(progress))
+        assertEquals(TaskSafety.MAX_CLICK_RETRY + 1, env.actions.count { it.startsWith("click:") })
+    }
 }

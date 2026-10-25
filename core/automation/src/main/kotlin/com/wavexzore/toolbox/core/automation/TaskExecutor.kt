@@ -9,6 +9,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
@@ -61,48 +62,75 @@ class TaskExecutor(
         val token = RunToken()
         activeRuns.add(token)
         try {
-            val mutex = mutexes.computeIfAbsent(task.pkg) { Mutex() }
-            mutex.withLock {
-                val vars = HashMap<String, String>()
+            if (task.steps.size > TaskDef.HARD_MAX_STEPS) {
                 emit(TaskProgress.Started(task.id, task.steps.size))
-                env.log("task[${task.id}] start pkg=${task.pkg} steps=${task.steps.size}")
-                for ((index, step) in task.steps.withIndex()) {
-                    if (token.cancelled) {
-                        emit(TaskProgress.Finished(TaskProgress.Status.CANCELLED))
-                        env.log("task[${task.id}] cancelled at step#$index")
-                        return@withLock
-                    }
-                    emit(TaskProgress.StepStarted(index, step))
-                    val result = executeStep(step, vars, token)
-                    emit(
-                        TaskProgress.StepFinished(
-                            index,
-                            result.ok,
-                            skipped = result.skipped || (!result.ok && step.failPolicy != FailPolicy.ABORT),
-                            reason = result.reason,
-                        ),
-                    )
-                    if (!result.ok) {
-                        env.log("task[${task.id}] step#$index ${step.kind()} failed: ${result.reason}")
-                        if (token.cancelled) {
-                            emit(TaskProgress.Finished(TaskProgress.Status.CANCELLED))
-                            return@withLock
-                        }
-                        if (step.failPolicy == FailPolicy.ABORT) {
-                            emit(TaskProgress.Finished(TaskProgress.Status.FAILED, result.reason ?: "step#$index failed"))
-                            return@withLock
-                        }
-                    }
-                }
-                if (token.cancelled) {
-                    emit(TaskProgress.Finished(TaskProgress.Status.CANCELLED))
-                } else {
-                    emit(TaskProgress.Finished(TaskProgress.Status.SUCCESS))
-                    env.log("task[${task.id}] success")
-                }
+                emit(
+                    TaskProgress.Finished(
+                        TaskProgress.Status.FAILED,
+                        "步骤数超限：${task.steps.size} > ${TaskDef.HARD_MAX_STEPS}",
+                    ),
+                )
+                return@flow
+            }
+            val maxDuration = task.maxDurationMs.coerceIn(
+                TaskDef.MIN_DURATION_MS,
+                TaskDef.HARD_MAX_DURATION_MS,
+            )
+            val completed = withTimeoutOrNull(maxDuration) {
+                runTask(task, token)
+            }
+            if (completed == null) {
+                env.log("task[${task.id}] timeout after ${maxDuration}ms")
+                emit(TaskProgress.Finished(TaskProgress.Status.FAILED, "任务总时长超限（${maxDuration}ms）"))
             }
         } finally {
             activeRuns.remove(token)
+        }
+    }
+
+    private suspend fun FlowCollector<TaskProgress>.runTask(
+        task: TaskDef,
+        token: RunToken,
+    ) {
+        val mutex = mutexes.computeIfAbsent(task.pkg) { Mutex() }
+        mutex.withLock {
+            val vars = HashMap<String, String>()
+            emit(TaskProgress.Started(task.id, task.steps.size))
+            env.log("task[${task.id}] start pkg=${task.pkg} steps=${task.steps.size}")
+            for ((index, step) in task.steps.withIndex()) {
+                if (token.cancelled) {
+                    emit(TaskProgress.Finished(TaskProgress.Status.CANCELLED))
+                    env.log("task[${task.id}] cancelled at step#$index")
+                    return@withLock
+                }
+                emit(TaskProgress.StepStarted(index, step))
+                val result = executeStep(step, vars, token)
+                emit(
+                    TaskProgress.StepFinished(
+                        index,
+                        result.ok,
+                        skipped = result.skipped || (!result.ok && step.failPolicy != FailPolicy.ABORT),
+                        reason = result.reason,
+                    ),
+                )
+                if (!result.ok) {
+                    env.log("task[${task.id}] step#$index ${step.kind()} failed: ${result.reason}")
+                    if (token.cancelled) {
+                        emit(TaskProgress.Finished(TaskProgress.Status.CANCELLED))
+                        return@withLock
+                    }
+                    if (step.failPolicy == FailPolicy.ABORT) {
+                        emit(TaskProgress.Finished(TaskProgress.Status.FAILED, result.reason ?: "step#$index failed"))
+                        return@withLock
+                    }
+                }
+            }
+            if (token.cancelled) {
+                emit(TaskProgress.Finished(TaskProgress.Status.CANCELLED))
+            } else {
+                emit(TaskProgress.Finished(TaskProgress.Status.SUCCESS))
+                env.log("task[${task.id}] success")
+            }
         }
     }
 
@@ -112,8 +140,7 @@ class TaskExecutor(
 
     private suspend fun executeStep(step: Step, vars: MutableMap<String, String>, token: RunToken): StepResult {
         if (step is Step.Delay) return runStep(step, vars, token)
-        val timeout = step.timeoutMs
-        if (timeout <= 0) return runStep(step, vars, token)
+        val timeout = step.timeoutMs.coerceIn(TaskSafety.MIN_STEP_TIMEOUT_MS, TaskSafety.MAX_STEP_TIMEOUT_MS)
         val result = withTimeoutOrNull(timeout) { runStep(step, vars, token) }
         return result ?: StepResult(false, reason = "timeout(${timeout}ms)")
     }
@@ -137,7 +164,7 @@ class TaskExecutor(
 
         is Step.Back -> {
             var ok = true
-            repeat(step.times.coerceAtLeast(1)) {
+            repeat(step.times.coerceIn(1, TaskSafety.MAX_BACK_TIMES)) {
                 if (token.cancelled) return@repeat
                 ok = env.back() && ok
                 if (!delayOrCancel(token, BACK_SETTLE_MS)) return@repeat
@@ -165,7 +192,8 @@ class TaskExecutor(
         }
 
         is Step.Delay -> {
-            if (delayOrCancel(token, step.ms)) StepResult(true)
+            val ms = step.ms.coerceIn(0, TaskSafety.MAX_DELAY_MS)
+            if (delayOrCancel(token, ms)) StepResult(true)
             else StepResult(true, reason = "cancelled")
         }
 
@@ -178,7 +206,7 @@ class TaskExecutor(
 
     private suspend fun clickStep(step: Step.Click, token: RunToken): StepResult {
         var attempts = 0
-        val maxAttempts = step.retry.coerceAtLeast(0) + 1
+        val maxAttempts = step.retry.coerceIn(0, TaskSafety.MAX_CLICK_RETRY) + 1
         while (attempts < maxAttempts) {
             attempts++
             var node = findNode(step.selector)
@@ -204,7 +232,7 @@ class TaskExecutor(
         val forward = step.dir == ScrollDir.DOWN
         when (val until = step.until) {
             is Until.Times -> {
-                repeat(until.times.coerceAtLeast(1)) {
+                repeat(until.times.coerceIn(1, TaskSafety.MAX_SCROLL_TIMES)) {
                     if (token.cancelled) return@repeat
                     env.scroll(forward)
                     awaitSlice(token)
@@ -213,8 +241,9 @@ class TaskExecutor(
             }
 
             is Until.Selector -> {
+                val maxScrolls = until.maxScrolls.coerceIn(1, TaskSafety.MAX_SCROLL_TIMES)
                 var scrolls = 0
-                while (scrolls < until.maxScrolls) {
+                while (scrolls < maxScrolls) {
                     if (findNode(until.selector) != null) return StepResult(true)
                     if (token.cancelled) return StepResult(true, reason = "cancelled")
                     env.scroll(forward)
@@ -222,7 +251,7 @@ class TaskExecutor(
                     awaitSlice(token)
                 }
                 return if (findNode(until.selector) != null) StepResult(true)
-                else StepResult(false, reason = "滚动 ${until.maxScrolls} 次仍未命中: ${until.selector}")
+                else StepResult(false, reason = "滚动 ${maxScrolls} 次仍未命中: ${until.selector}")
             }
 
             Until.Stable -> {

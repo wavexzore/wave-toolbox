@@ -32,6 +32,7 @@ kotlin {
 dependencies {
     implementation(project(":core:selector"))
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.json5)
 
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)

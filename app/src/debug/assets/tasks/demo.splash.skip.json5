@@ -1,0 +1,13 @@
+{
+  id: "demo.splash.skip",
+  name: "开屏广告跳过（需安装测试 App）",
+  pkg: "com.example.splashdemo",
+  maxDurationMs: 30000,
+  steps: [
+    { type: "openApp", pkg: "com.example.splashdemo" },
+    { type: "waitFor", selector: '[text*="跳过"]', timeoutMs: 8000 },
+    { type: "click", selector: '[text*="跳过"]', retry: 1 },
+    { type: "waitActivity", classSuffix: "ContentActivity", timeoutMs: 5000 },
+    { type: "assertText", text: "内容页（广告已跳过）", timeoutMs: 3000 },
+  ],
+}

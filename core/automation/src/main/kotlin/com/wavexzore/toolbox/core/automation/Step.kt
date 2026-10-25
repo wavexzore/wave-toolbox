@@ -104,5 +104,14 @@ data class TaskDef(
     val id: String,
     val name: String = "",
     val pkg: String,
+    /** 单次运行总时长上限（毫秒）；执行器会再按硬上限收敛。 */
+    val maxDurationMs: Long = DEFAULT_MAX_DURATION_MS,
     val steps: List<Step>,
-)
+) {
+    companion object {
+        const val DEFAULT_MAX_DURATION_MS = 60_000L
+        const val HARD_MAX_DURATION_MS = TaskSafety.MAX_TASK_DURATION_MS
+        const val MIN_DURATION_MS = TaskSafety.MIN_TASK_DURATION_MS
+        const val HARD_MAX_STEPS = TaskSafety.MAX_STEPS
+    }
+}

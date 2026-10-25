@@ -1,0 +1,11 @@
+{
+  id: "demo.self.check",
+  name: "任务环境自检（当前 Debug 页）",
+  pkg: "com.wavexzore.toolbox",
+  maxDurationMs: 15000,
+  steps: [
+    { type: "waitFor", selector: '[text="任务验证（Debug）"]', timeoutMs: 3000 },
+    { type: "assertText", text: "运行日志", timeoutMs: 3000 },
+    { type: "delay", ms: 100 },
+  ],
+}
