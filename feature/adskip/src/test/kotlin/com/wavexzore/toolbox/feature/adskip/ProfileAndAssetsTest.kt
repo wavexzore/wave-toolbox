@@ -24,7 +24,7 @@ class ProfileAndAssetsTest {
 
     @Test
     fun mmPackCarriesMigratedBuiltinRule() {
-        val text = File("src/main/assets/rules/adskip/com.tencent.mm.json5").readText()
+        val text = File("../../core/rules/src/main/assets/rules/adskip/com.tencent.mm.json5").readText()
         val pack = AdSkipPackCodec.parse(text)
         assertEquals(2, pack.schemaVersion)
         val entry = pack.groups.first { it.id == "com.tencent.mm#splash-entry" }

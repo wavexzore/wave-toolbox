@@ -3,6 +3,7 @@ package com.wavexzore.toolbox.core.rules.model
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
@@ -20,7 +21,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-/** 规则组（README §6.1 扩展：组承载 apps 与组级版本约束；规则为组内条目）。 */
+/** 规则组（统一模型：通用规则 + adskip 规则包共用；README §6.1 扩展）。 */
 @Serializable
 data class RawRuleGroup(
     val id: String,
@@ -34,9 +35,81 @@ data class RawRuleGroup(
     @Serializable(with = StringVersionRangeSerializer::class)
     val versionName: VersionRange<String>? = null,
     val rules: List<RawRule> = emptyList(),
+    /** 组级活动页约束（adskip 组使用；通用组用 rule 级约束）。 */
+    val activityIds: List<String> = emptyList(),
+    val excludeActivityIds: List<String> = emptyList(),
+    // ---- 统一模型：adskip 组级字段（通用规则缺省忽略） ----
+    /** `generic` | `adskip`。 */
+    val kind: String = KIND_GENERIC,
+    /** 广告跳过运行模式：`splash` | `any`。 */
+    val mode: String = MODE_SPLASH,
+    /** 生效区域；null=由 [mode] 推导。 */
+    val zone: String? = null,
+    /** 组级选择器（OR 语义；adskip 组使用）。 */
+    val matches: List<String> = emptyList(),
+    /** 组级追加关键词（adskip 组使用）。 */
+    val keywords: List<String> = emptyList(),
+    /** 树路径兜底：`0/2/1`。 */
+    val path: String? = null,
+    /** 组级坐标兜底（px 或 %）。 */
+    @Serializable(with = RulePositionSerializer::class)
+    val position: RulePosition? = null,
+    /** 组级最小间隔毫秒（adskip 组使用）。 */
+    val actionCd: Long = 800,
+    /** 同实例最大执行次数（adskip 组使用）。 */
+    val actionMaximum: Int = 1,
+    /** 组级年轻窗口延迟毫秒（adskip 组使用）。 */
+    val delayMs: Long = 150,
+    /** activity 区域稳定期毫秒（adskip 组使用）。 */
+    val settleMs: Long = 350,
+    /** 弹窗窗口放行三态（adskip 组使用；null=按运行模式）。 */
+    val popupAware: Boolean? = null,
+    /** 命中活动页时压制通用 keyword/vid 回退（adskip 组使用）。 */
+    val suppressGeneric: Boolean = false,
+    /** 规则包版本（adskip 组使用）。 */
+    val packVersion: Int = 1,
+    /** 来源标记（`builtin` / `user:<name>`）：仅运行时使用，不写入规则 JSON。 */
+    @Transient
+    val source: String = SOURCE_BUILTIN,
+) {
+    /** 生效区域（缺省推导，v1 等价）。 */
+    val effectiveZone: String
+        get() = zone ?: if (mode == MODE_ANY) ZONE_ANY else ZONE_ENTRY
+
+    /** 弹窗窗口是否放行（null 时按运行模式：splash 拦、any 放行）。 */
+    fun popupAllowed(runMode: String): Boolean = popupAware ?: (runMode == MODE_ANY)
+
+    companion object {
+        const val CURRENT_SCHEMA_VERSION = 2
+
+        const val KIND_GENERIC = "generic"
+        const val KIND_ADSKIP = "adskip"
+
+        const val MODE_SPLASH = "splash"
+        const val MODE_ANY = "any"
+
+        const val ZONE_ENTRY = "entry"
+        const val ZONE_ACTIVITY = "activity"
+        const val ZONE_POPUP = "popup"
+        const val ZONE_ANY = "any"
+
+        val VALID_ZONES = setOf(ZONE_ENTRY, ZONE_ACTIVITY, ZONE_POPUP, ZONE_ANY)
+
+        const val SOURCE_BUILTIN = "builtin"
+        const val SOURCE_USER_PREFIX = "user:"
+    }
+}
+
+/** 规则包（adskip 导入/导出格式；内部统一为 [RawRuleGroup] + [kind]=adskip）。 */
+@Serializable
+data class RawRulePack(
+    val schemaVersion: Int = CURRENT_SCHEMA_VERSION,
+    val pkg: String,
+    val packVersion: Int = 1,
+    val groups: List<RawRuleGroup> = emptyList(),
 ) {
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 1
+        const val CURRENT_SCHEMA_VERSION = 2
     }
 }
 
@@ -231,25 +304,31 @@ object RulePositionSerializer : KSerializer<RulePosition> {
 
     override fun deserialize(decoder: Decoder): RulePosition {
         val obj = (decoder as JsonDecoder).decodeJsonElement().jsonObject
-        return RulePosition(
-            x = obj["x"].asIntOrNull(),
-            y = obj["y"].asIntOrNull(),
-            xPercent = obj["x"].asPercent(),
-            yPercent = obj["y"].asPercent(),
-        )
+        // 兼容两种写法：
+        // - 基座：`{x: 900, y: 120}` / `{x: "95%", y: "5%"}`
+        // - adskip：`{xPercent: 95, yPercent: 5}`
+        val x = obj["x"]?.asIntOrNull()
+        val y = obj["y"]?.asIntOrNull()
+        val xPercent = obj["xPercent"]?.asPercentValue() ?: obj["x"]?.asPercentValue()
+        val yPercent = obj["yPercent"]?.asPercentValue() ?: obj["y"]?.asPercentValue()
+        return RulePosition(x = x, y = y, xPercent = xPercent, yPercent = yPercent)
     }
 
-    private fun JsonElement?.asPercent(): Float? {
-        val p = this as? JsonPrimitive ?: return null
-        if (!p.isString) return null
-        return p.content.removeSuffix("%").trim().toFloatOrNull()?.takeIf { p.content.endsWith("%") }
-    }
+    private fun JsonElement?.asPercentValue(): Float? =
+        when (this) {
+            null, is JsonNull -> null
+            is JsonPrimitive -> when {
+                isString -> content.removeSuffix("%").trim().toFloatOrNull()?.takeIf { content.endsWith("%") }
+                else -> content.toFloatOrNull()
+            }
+            else -> null
+        }
 
     override fun serialize(encoder: Encoder, value: RulePosition) {
         (encoder as JsonEncoder).encodeJsonElement(
             buildJsonObject {
-                value.xPercent?.let { put("x", "${it}%") } ?: value.x?.let { put("x", it) }
-                value.yPercent?.let { put("y", "${it}%") } ?: value.y?.let { put("y", it) }
+                value.xPercent?.let { put("xPercent", it) } ?: value.x?.let { put("x", it) }
+                value.yPercent?.let { put("yPercent", it) } ?: value.y?.let { put("y", it) }
             },
         )
     }

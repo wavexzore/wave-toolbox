@@ -19,6 +19,7 @@ import com.wavexzore.toolbox.core.data.stats.StatsRepository
 import com.wavexzore.toolbox.core.feature.api.FeatureEvent
 import com.wavexzore.toolbox.core.feature.api.ToolFeature
 import com.wavexzore.toolbox.core.rules.model.RawRule
+import com.wavexzore.toolbox.core.rules.model.RawRuleGroup
 import com.wavexzore.toolbox.core.rules.model.RuleAction
 import com.wavexzore.toolbox.core.rules.model.RulePosition
 import com.wavexzore.toolbox.core.selector.NodeView
@@ -53,7 +54,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
 import dagger.multibindings.Multibinds
-import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -661,23 +661,32 @@ class AdSkipFeature @Inject constructor(
     // ---- 设置页辅助（导入导出/应用列表） ----
 
     fun importUserPack(text: String, name: String = "imported.json5") {
-        runCatching { File(loader.userDir(), name).writeText(text) }
-            .onSuccess { loader.reload(); Log.i(TAG, "user pack imported: $name") }
-            .onFailure { Log.w(TAG, "import failed", it) }
+        scope.launch {
+            runCatching { loader.importUser(text, name) }
+                .onSuccess { outcome ->
+                    Log.i(TAG, "user pack imported: $name groups=${outcome.groups.size} errors=${outcome.errors.size}")
+                }
+                .onFailure { t -> Log.w(TAG, "import failed", t) }
+        }
     }
 
     fun exportPacksJson(): String {
         val json = kotlinx.serialization.json.Json { prettyPrint = true }
         val files = loader.state.value.packs.values.map {
-            AdSkipPackFile(pkg = it.pkg, packVersion = it.packVersion, groups = it.groups)
+            AdSkipPackFile(
+                pkg = it.pkg,
+                packVersion = it.packVersion,
+                // 导出为规则包形态：去掉仓库内部字段（apps/kind），重新导入时由解析器补齐。
+                groups = it.groups.map { group ->
+                    group.copy(apps = emptyList(), kind = RawRuleGroup.KIND_GENERIC)
+                },
+            )
         }
         return json.encodeToString(
             kotlinx.serialization.builtins.ListSerializer(AdSkipPackFile.serializer()),
             files,
         )
     }
-
-    fun userPackDir(): File = loader.userDir()
 
     data class AppEntry(val pkg: String, val label: String)
 

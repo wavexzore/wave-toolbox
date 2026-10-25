@@ -67,7 +67,13 @@ fun AdSkipSettingsPane(
         uri ?: return@rememberLauncherForActivityResult
         runCatching {
             context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText().orEmpty()
-        }.onSuccess { feature.importUserPack(it) }
+        }.onSuccess { text ->
+            // 同一文档重复导入覆盖同名源；不同文档使用不同来源，可多包共存。
+            val name = uri.lastPathSegment?.substringAfterLast('/')
+                ?.takeIf { it.isNotBlank() }
+                ?: "imported-${System.currentTimeMillis()}.json5"
+            feature.importUserPack(text, name)
+        }
     }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         uri ?: return@rememberLauncherForActivityResult
@@ -154,8 +160,8 @@ fun AdSkipSettingsPane(
         WaveSectionLabel("规则包")
         WaveCard(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp)) {
             WaveRow(
-                title = "内置应用规则包",
-                subtitle = "${packState.packs.size} 个 · 已全部启用",
+                title = "应用规则包",
+                subtitle = "${packState.packs.size} 个应用 · 用户包整包覆盖内置",
                 leading = { WaveIconBox(Icons.Filled.Category) },
                 trailing = { WaveChevron() },
                 onClick = { showHelpDialog = true },
@@ -232,8 +238,8 @@ fun AdSkipSettingsPane(
             title = { Text("规则包说明", fontSize = 16.sp) },
             text = {
                 Text(
-                    "内置规则按应用编写：指定开屏活动的关键词、节点路径或屏幕坐标。\n" +
-                        "支持导入 JSON5 自制包；规则改动后重进本页生效。",
+                    "内置规则与导入规则统一存储、按应用包生效：同包名的用户规则会整包覆盖内置规则。\n" +
+                        "支持导入 JSON5 自制包；导入后自动生效，无需重启。",
                     fontSize = 13.sp,
                     color = Wave.Ink2,
                     lineHeight = 20.sp,

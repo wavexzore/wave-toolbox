@@ -10,9 +10,13 @@ import androidx.room.Transaction
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
-@Entity(tableName = "rule_groups")
+@Entity(
+    tableName = "rule_groups",
+    primaryKeys = ["id", "source"],
+    indices = [Index("source")],
+)
 data class RuleGroupEntity(
-    @PrimaryKey val id: String,
+    val id: String,
     val name: String,
     val order: Int,
     val enabled: Boolean,
@@ -24,11 +28,12 @@ data class RuleGroupEntity(
 
 @Entity(
     tableName = "rule_apps",
-    primaryKeys = ["groupId", "pkg"],
+    primaryKeys = ["groupId", "source", "pkg"],
     indices = [Index("pkg")],
 )
 data class RuleAppEntity(
     val groupId: String,
+    val source: String,
     val pkg: String,
 )
 
@@ -52,11 +57,18 @@ interface RuleDao {
     @Query("SELECT * FROM rule_groups WHERE enabled = 1 ORDER BY `order`, id")
     fun observeEnabledGroups(): Flow<List<RuleGroupEntity>>
 
+    /** 全部组（含禁用），供「用户包整包覆盖内置」在禁用态下仍能压制内置。 */
+    @Query("SELECT * FROM rule_groups ORDER BY `order`, id")
+    suspend fun allGroups(): List<RuleGroupEntity>
+
+    @Query("SELECT * FROM rule_groups ORDER BY `order`, id")
+    fun observeAllGroups(): Flow<List<RuleGroupEntity>>
+
     /** 按包名索引直查（pkg + enabled 命中走 rule_apps.pkg 索引）。 */
     @Query(
         """
         SELECT DISTINCT g.* FROM rule_groups g
-        JOIN rule_apps a ON a.groupId = g.id
+        JOIN rule_apps a ON a.groupId = g.id AND a.source = g.source
         WHERE a.pkg = :pkg AND g.enabled = 1
         ORDER BY g.`order`, g.id
         """,
@@ -70,6 +82,10 @@ interface RuleDao {
     @Query("SELECT COUNT(*) FROM rule_groups WHERE source = :source")
     suspend fun countBySource(source: String): Int
 
+    /** 某来源的组 id 集合（用于内置资产变更检测）。 */
+    @Query("SELECT id FROM rule_groups WHERE source = :source")
+    suspend fun groupIdsBySource(source: String): List<String>
+
     @Upsert
     suspend fun upsertGroups(groups: List<RuleGroupEntity>)
 
@@ -79,7 +95,15 @@ interface RuleDao {
     @Query("DELETE FROM rule_groups WHERE source = :source")
     suspend fun deleteGroupsBySource(source: String)
 
-    @Query("DELETE FROM rule_apps WHERE groupId NOT IN (SELECT id FROM rule_groups)")
+    @Query(
+        """
+        DELETE FROM rule_apps
+        WHERE NOT EXISTS (
+            SELECT 1 FROM rule_groups g
+            WHERE g.id = rule_apps.groupId AND g.source = rule_apps.source
+        )
+        """,
+    )
     suspend fun deleteOrphanApps()
 
     @Insert
