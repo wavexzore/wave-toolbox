@@ -3,6 +3,7 @@ package com.wavexzore.toolbox.core.accessibility.keepalive
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.UserManager
 import android.util.Log
 import com.wavexzore.toolbox.core.data.settings.SettingsRepository
 import dagger.hilt.EntryPoint
@@ -19,6 +20,10 @@ import kotlinx.coroutines.launch
  * 开机自启（T-009，D-005）：`BOOT_COMPLETED` + `LOCKED_BOOT_COMPLETED`（直启兜底）。
  * 无障碍服务本身由系统在开机后自动重绑；本接收器补前台常驻通知。
  * 受设置项 `boot.autostart` 控制（关闭后开机不拉起常驻服务）。
+ *
+ * 注意：`LOCKED_BOOT_COMPLETED` 早于用户解锁，此时凭据加密的 DataStore 不可读，
+ * 不能回退默认值（会把「开机自启=关」误判为开）。未解锁时直接交给后续
+ * `BOOT_COMPLETED` 处理；只有系统确实只发直启广播时，才在解锁后重新判断。
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -31,6 +36,11 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
         if (action != Intent.ACTION_BOOT_COMPLETED && action != Intent.ACTION_LOCKED_BOOT_COMPLETED) return
+
+        if (shouldDeferLockedBoot(action, context.isUserUnlocked())) {
+            Log.i(TAG, "boot: locked, defer to BOOT_COMPLETED ($action)")
+            return
+        }
 
         // 广播回调在主线程；goAsync 给协程留出完成时间，避免 read DataStore 时阻塞主线程。
         val pending = goAsync()
@@ -57,7 +67,14 @@ class BootReceiver : BroadcastReceiver() {
         }
     }
 
+    private fun Context.isUserUnlocked(): Boolean =
+        getSystemService(UserManager::class.java)?.isUserUnlocked ?: true
+
     companion object {
         const val TAG = "WaveA11y.KeepAlive"
+
+        /** 直启广播且用户尚未解锁 → 推迟到 `BOOT_COMPLETED`，避免读不到设置而误启动。 */
+        internal fun shouldDeferLockedBoot(action: String?, userUnlocked: Boolean): Boolean =
+            action == Intent.ACTION_LOCKED_BOOT_COMPLETED && !userUnlocked
     }
 }

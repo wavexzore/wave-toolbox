@@ -11,12 +11,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -51,20 +48,18 @@ class EventPipeline @Inject constructor(
         val throttled: Long = 0,
         /** 因队列容量上限被淘汰的最旧事件数（不是 filter/throttle 丢弃）。 */
         val overflow: Long = 0,
+        /** 下游订阅者个人队列溢出被淘汰的事件数（慢消费者只影响自己）。 */
+        val flowOverflow: Long = 0,
     )
 
     private val selfPackage = context.packageName
     private val consumeScope = CoroutineScope(SupervisorJob() + dispatchers.event)
     private val settingsScope = CoroutineScope(SupervisorJob() + dispatchers.io)
     private val queue = EventQueue()
-
-    private val _events = MutableSharedFlow<A11yEvent>(
-        extraBufferCapacity = 64,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
-    )
+    private val fanout = EventFanout<A11yEvent>(EVENT_BUFFER_CAPACITY)
 
     /** 已过滤 + 已节流后的可用事件流（T-006 规则、AnrGuard 等消费）。 */
-    val events: SharedFlow<A11yEvent> = _events.asSharedFlow()
+    val events: Flow<A11yEvent> = fanout.events
 
     private val _recent = MutableStateFlow<List<RecentEvent>>(emptyList())
 
@@ -137,6 +132,7 @@ class EventPipeline @Inject constructor(
         dropped = droppedCount.get(),
         throttled = throttledCount.get(),
         overflow = queue.droppedCount(),
+        flowOverflow = fanout.droppedCount(),
     )
 
     fun clearLog() {
@@ -176,7 +172,7 @@ class EventPipeline @Inject constructor(
         }
 
         activeWindowTracker.onEvent(event, now)
-        _events.tryEmit(event)
+        fanout.publish(event)
         appendRecent(event.toRecent(now, null), now)
 
         val dispatched = dispatchedCount.incrementAndGet()
@@ -215,6 +211,9 @@ class EventPipeline @Inject constructor(
     companion object {
         const val TAG = "WaveA11y.Pipeline"
         const val LOG_LIMIT = 100
+
+        /** 每个下游订阅者的独立队列容量（慢消费者只淘汰自己的最旧事件）。 */
+        const val EVENT_BUFFER_CAPACITY = EventFanout.DEFAULT_CAPACITY
 
         /** UI 合并发布间隔：过密会让"重组→窗口事件→重组"形成帧级反馈环。 */
         const val UI_FLUSH_INTERVAL_MS = 400L

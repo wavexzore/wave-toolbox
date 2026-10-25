@@ -28,7 +28,9 @@ import kotlinx.coroutines.launch
  * 常驻前台服务（T-009，D-005）：FGS(specialUse) + 低优先级常驻通知。
  *
  * - 通知文案实时含引擎/无障碍状态，操作按钮可切换引擎、点按进应用；
- * - 与 1×1 overlay、BOOT 接收器构成三重独立保活（互不依赖）；
+ * - 与 1×1 overlay、BOOT 接收器构成三层恢复，但**同属应用进程**：FGS 提升进程优先级，
+ *   overlay 依附无障碍服务，BOOT 负责重启后拉起；进程被杀后由系统重绑 /
+ *   `START_STICKY` 恢复，不是跨进程独立守护（不要按「互不依赖」理解）；
  * - 仅承载通知与状态镜像，不参与事件处理（引擎在无障碍服务内）。
  */
 @AndroidEntryPoint
@@ -104,11 +106,7 @@ class KeepAliveService : Service() {
             Intent(this, ToggleEngineReceiver::class.java).setAction(ToggleEngineReceiver.ACTION_TOGGLE_ENGINE),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val status = when {
-            !engineEnabled -> "引擎已关闭"
-            serviceEnabled -> "引擎已开启 · 无障碍已连接"
-            else -> "引擎已开启 · 等待无障碍服务"
-        }
+        val status = keepAliveStatusText(engineEnabled, serviceEnabled)
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_keepalive)
             .setContentTitle("wave工具箱")
@@ -165,4 +163,11 @@ class KeepAliveService : Service() {
             context.startService(Intent(context, KeepAliveService::class.java).setAction(ACTION_REFRESH))
         }
     }
+}
+
+/** 常驻通知状态文案（纯函数，便于单测三种状态）。 */
+internal fun keepAliveStatusText(engineEnabled: Boolean, serviceEnabled: Boolean): String = when {
+    !engineEnabled -> "引擎已关闭"
+    serviceEnabled -> "引擎已开启 · 无障碍已连接"
+    else -> "引擎已开启 · 等待无障碍服务"
 }

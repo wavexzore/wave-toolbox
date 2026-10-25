@@ -523,4 +523,71 @@ class UpdateRepositoryTest {
         assertEquals(ErrorKind.RateLimited, error.kind)
         assertNull(error.resetAtEpochSec)
     }
+
+    // ---------------------------------------------------------------- 单操作状态机
+
+    @Test
+    fun `检查进行中 download 被拒绝`() = runTest {
+        val repo = newRepo()
+        seedAvailable(repo)
+        http.getGate = CompletableDeferred()
+        http.textResult = HttpText.Ok(releaseJson("v1.2.0", digest = zerosDigest(64)), "api.github.com")
+        repo.refresh(force = true)
+        advanceUntilIdle()
+        assertTrue(repo.state.value is UpdateState.Checking)
+
+        // 检查占用唯一操作槽：此时 download 必须排队/拒绝，不能并发发起。
+        repo.download()
+        advanceUntilIdle()
+        assertEquals(0, http.downloadedTo.size)
+
+        http.getGate!!.complete(Unit)
+        advanceUntilIdle()
+        assertEquals("v1.2.0", (repo.state.value as UpdateState.Available).info.tag)
+        assertEquals(0, http.downloadedTo.size)
+    }
+
+    @Test
+    fun `取消后旧下载的失败终态不回写`() = runTest {
+        val repo = newRepo()
+        seedAvailable(repo)
+        http.downloadGate = CompletableDeferred()
+        http.downloadResult = DownloadResult.IoError(IoKind.Interrupted)
+        repo.download()
+        advanceUntilIdle()
+        assertTrue(repo.state.value is UpdateState.Downloading)
+
+        repo.cancelDownload()
+        advanceUntilIdle()
+        assertTrue(repo.state.value is UpdateState.Available)
+
+        // 旧 job 的迟到失败不得把已取消的状态改成 Error。
+        http.downloadGate!!.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(repo.state.value is UpdateState.Available)
+    }
+
+    @Test
+    fun `取消后可立即重下且旧 job 不覆盖新状态`() = runTest {
+        val repo = newRepo()
+        seedAvailable(repo)
+        val firstGate = CompletableDeferred<Unit>()
+        http.downloadGate = firstGate
+        repo.download()
+        advanceUntilIdle()
+        repo.cancelDownload()
+        advanceUntilIdle()
+
+        http.downloadGate = null
+        okDownloads()
+        platform.apkVersion = "1.1.0"
+        repo.download()
+        advanceUntilIdle()
+        assertTrue(repo.state.value is UpdateState.Downloaded)
+
+        // 旧 job 收尾时不得把新下载的 Downloaded 改回旧结果。
+        firstGate.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(repo.state.value is UpdateState.Downloaded)
+    }
 }

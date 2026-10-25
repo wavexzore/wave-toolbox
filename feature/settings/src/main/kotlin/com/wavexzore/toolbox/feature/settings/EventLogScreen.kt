@@ -60,7 +60,7 @@ fun EventLogScreen(
 
             if (tab == 0) {
                 WaveNote(
-                    "收 ${stats.received} · 出 ${stats.dispatched} · 滤 ${stats.dropped} · 节 ${stats.throttled} · 溢 ${stats.overflow}（最近 ${recent.size} 条）",
+                    "收 ${stats.received} · 出 ${stats.dispatched} · 滤 ${stats.dropped} · 节 ${stats.throttled} · 溢 ${stats.overflow} · 流溢 ${stats.flowOverflow}（最近 ${recent.size} 条）",
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
