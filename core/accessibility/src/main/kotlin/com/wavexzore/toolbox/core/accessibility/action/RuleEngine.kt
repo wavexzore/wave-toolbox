@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
 /**
  * 规则引擎（T-007 / 04 §5.3）：被动执行层「界面上出现 X 就做 Y」。
  *
- * 链路：事件管线（已过滤+节流，事件单线程）→ 账本（页面实例/冷却/上限）→ 索引查询（pkg+activity+版本）
+ * 链路：事件管线（已过滤+节流；本引擎在 wave-query 消费）→ 账本（页面实例/冷却/上限）→ 索引查询（pkg+activity+版本）
  * → 规则匹配（[RuleMatcher]）→ 动作执行（[ActionExecutor]）→ 200ms 校验重试（[ClickVerifier]）。
  *
  * - 每个事件最多执行一条规则（命中第一条 allowed 的规则即止；被冷却/超限的规则跳过继续下一条）；
@@ -52,15 +52,25 @@ class RuleEngine @Inject constructor(
     private val selfPackage = context.packageName
     private val selectorEngine = SelectorEngine()
     private val ledger = ActionLedger()
-    private val scope = CoroutineScope(SupervisorJob() + dispatchers.event)
+    // 通用规则链会建整棵树/读 Room 索引，放到 wave-query，避免阻塞 wave-event 上的
+    // FeatureRegistry → AdSkipFeature 分发（adskip 的时效性优先）。
+    private val scope = CoroutineScope(SupervisorJob() + dispatchers.query)
     private val versions = HashMap<String, Pair<Int?, String?>>()
     private val lastDenyLogAt = HashMap<String, Long>()
 
     @Volatile
     private var index: RuleIndex? = null
 
+    /** 当前 [index] 对应的规则修订号；与 [rulesRevision] 不一致即需要重建。 */
     @Volatile
-    private var indexLoadedAt = 0L
+    private var loadedRevision = -1L
+
+    /** 最近一次索引加载失败时间（短暂退避，避免每个事件都打 Room）。 */
+    @Volatile
+    private var indexLoadFailedAt = 0L
+
+    /** 规则表变更计数（Room 失效通知驱动）。 */
+    private val rulesRevision = AtomicLong(0)
 
     @Volatile
     private var verifyMs = SettingsRepository.DEFAULT_CLICK_VERIFY_MS.toLong()
@@ -127,6 +137,15 @@ class RuleEngine @Inject constructor(
         collectorsStarted = true
         scope.launch { settingsRepository.clickVerifyMs.collect { verifyMs = it.toLong() } }
         scope.launch { settingsRepository.eventRecordEnabled.collect { logEnabled = it } }
+        // 规则表变更（导入/替换/启停）→ 标记索引失效，下个事件重建；替代固定 TTL 轮询。
+        scope.launch {
+            runCatching {
+                ruleRepository.observeIndexRevision().collect {
+                    rulesRevision.incrementAndGet()
+                    index = null
+                }
+            }.onFailure { Log.w(TAG, "rule revision observer failed", it) }
+        }
         scope.launch { runCatching { loadIndex(importBuiltin = true) } }
         scope.launch {
             pipeline.events.collect { event ->
@@ -165,9 +184,18 @@ class RuleEngine @Inject constructor(
         Log.d(TAG, "eval pkg=$pkg rules=${rules.size} act=${activityFor(pkg)?.substringAfterLast('.')}")
         if (rules.isEmpty()) return
 
-        val picked = treeProvider.currentTree(pkg = pkg, displayId = event.displayId)
+        val picked = treeProvider.currentTree(
+            pkg = pkg,
+            displayId = event.displayId,
+            allowForeignFallback = false,
+        )
         if (picked == null) {
             logThrottled("no-tree", "no-tree pkg=$pkg")
+            return
+        }
+        // 基座规则不允许跨包取树：即使窗口提供器回退策略变化，这里也再做一次硬校验。
+        if (picked.rootPkg != pkg) {
+            logThrottled("owner-mismatch", "owner-mismatch pkg=$pkg root=${picked.rootPkg}")
             return
         }
         logThrottled("tree", "tree pkg=$pkg nodes=${picked.tree.nodeCount} truncated=${picked.tree.truncated} disp=${picked.displayId} root=[${picked.tree.root.describe()}]")
@@ -213,10 +241,27 @@ class RuleEngine @Inject constructor(
             delay(verifyMs)
             if (!running) return@launch
             if (ledger.instance != instanceAtAction) return@launch
-            val picked = treeProvider.currentTree(ledger.packageName, displayId = null) ?: return@launch
+            val pkg = ledger.packageName ?: return@launch
+            val picked = treeProvider.currentTree(
+                pkg = pkg,
+                displayId = null,
+                allowForeignFallback = false,
+            ) ?: return@launch
+            if (picked.rootPkg != pkg) return@launch
             val freshTarget = RuleMatcher.evaluate(selectorEngine, picked.tree.root, rule).target ?: return@launch
             val stillPresent = ClickVerifier.signature(freshTarget) == signature
             if (!ClickVerifier.shouldRetry(attemptsUsed = 1, maxAttempts = MAX_ATTEMPTS, nodeStillPresent = stillPresent)) return@launch
+            // 复核重试同样受规则预算/冷却约束，避免 actionMaximum=1 实际点两次。
+            val retryDecision = ledger.decision(
+                rule.id,
+                rule.actionCd,
+                rule.actionMaximum,
+                System.currentTimeMillis(),
+            )
+            if (!retryDecision.allowed) {
+                logDeny(rule, retryDecision.reason, pkg, System.currentTimeMillis())
+                return@launch
+            }
             ledger.markExecuted(rule.id, System.currentTimeMillis())
             val retryStartedAt = System.currentTimeMillis()
             val result = executor.execute(rule, freshTarget as? AndroidNodeView, picked.tree.screenWidth, picked.tree.screenHeight)
@@ -243,21 +288,35 @@ class RuleEngine @Inject constructor(
 
     private suspend fun ensureIndex(): RuleIndex? {
         val current = index
-        if (current != null && System.currentTimeMillis() - indexLoadedAt < INDEX_TTL_MS) return current
+        val revision = rulesRevision.get()
+        if (current != null && loadedRevision == revision) return current
+        // 加载失败后退避，避免事件洪峰里反复扫 Room（索引为空时同样生效）。
+        if (indexLoadFailedAt != 0L && System.currentTimeMillis() - indexLoadFailedAt < INDEX_RETRY_MS) {
+            return current
+        }
         return loadIndex(importBuiltin = false)
     }
 
     private suspend fun loadIndex(importBuiltin: Boolean = false): RuleIndex? = try {
-        if (importBuiltin || ruleRepository.currentGroups().isEmpty()) {
+        if (importBuiltin || !ruleRepository.hasBuiltinSource()) {
             val outcome = ruleRepository.importBuiltin()
             Log.i(TAG, "builtin imported: groups=${outcome.groups.size} errors=${outcome.errors.size}")
         }
-        ruleRepository.buildIndex().also {
-            index = it
-            indexLoadedAt = System.currentTimeMillis()
-            Log.d(TAG, "index loaded: packages=${it.packages().size}")
+        val revisionBefore = rulesRevision.get()
+        val built = ruleRepository.buildIndex()
+        if (revisionBefore == rulesRevision.get()) {
+            loadedRevision = revisionBefore
+            index = built
+            indexLoadFailedAt = 0L
+            Log.d(TAG, "index loaded: packages=${built.packages().size} revision=$revisionBefore")
+        } else {
+            // 构建期间规则已变化：丢弃本次结果；index 置空强制下个事件重建。
+            index = null
+            Log.d(TAG, "index discarded: rules changed during build")
         }
+        index
     } catch (t: Throwable) {
+        indexLoadFailedAt = System.currentTimeMillis()
         Log.e(TAG, "loadIndex failed", t)
         index
     }
@@ -309,8 +368,8 @@ class RuleEngine @Inject constructor(
     companion object {
         const val TAG = "WaveA11y.Rule"
 
-        /** 索引缓存有效期。 */
-        private const val INDEX_TTL_MS = 5_000L
+        /** 索引加载失败后的退避窗口（成功加载后不再按时间过期）。 */
+        private const val INDEX_RETRY_MS = 5_000L
 
         /** 校验重试上限（总执行次数，含首次）。 */
         private const val MAX_ATTEMPTS = 2

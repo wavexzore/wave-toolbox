@@ -14,6 +14,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -46,6 +48,9 @@ class AccessibilitySelfHeal @Inject constructor(
     /** 授权 × 连接联合状态（UI 展示用）。 */
     data class HealStatus(val granted: Boolean, val connected: Boolean)
 
+    /** 冷启动、设置页按钮、状态轮询可能同时触发自愈；串行化避免交叉读写 Secure Settings。 */
+    private val healMutex = Mutex()
+
     /** 状态轮询流（2s 间隔，仅订阅期运行；grant/返回页面后可自更新）。 */
     val status: Flow<HealStatus> = flow {
         while (true) {
@@ -58,12 +63,14 @@ class AccessibilitySelfHeal @Inject constructor(
      * 执行自愈（可在主线程调用；内部切 Default，重绑等待不阻塞 UI）。
      * 未授权/写失败等以 [AccessibilityServiceBootstrap.Result] 返回，不抛异常。
      */
-    suspend fun heal(): AccessibilityServiceBootstrap.Result = withContext(Dispatchers.Default) {
-        AccessibilityServiceBootstrap.ensureEnabled(
-            gateway = AndroidSecureSettingsGateway(context.contentResolver),
-            ownComponent = ownComponent,
-            isConnected = { SelectToSpeakService.instance != null },
-        )
+    suspend fun heal(): AccessibilityServiceBootstrap.Result = healMutex.withLock {
+        withContext(Dispatchers.Default) {
+            AccessibilityServiceBootstrap.ensureEnabled(
+                gateway = AndroidSecureSettingsGateway(context.contentResolver),
+                ownComponent = ownComponent,
+                isConnected = { SelectToSpeakService.instance != null },
+            )
+        }
     }
 
     /** 仅使用 ContentResolver 访问 Secure Settings。 */

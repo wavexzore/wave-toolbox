@@ -35,8 +35,22 @@ class MiniProgramCapsuleProfile @Inject constructor() : AppAdProfile {
         }
     }
 
-    /** 授权/隐私弹层动作词：关闭被抑制后由关键词链续取（「允许」=授权、「同意」=隐私协议），流程全自动。 */
-    override fun keywordExtra(): List<String> = listOf("允许", "同意")
+    /**
+     * 授权/隐私弹层动作词：关闭被抑制后由关键词链续取（「允许」=授权、「同意」=隐私协议）。
+     *
+     * 仅在授权页生效；不能对整个包的所有页面放开，否则聊天/正文里的「同意」文本
+     * 也会成为候选并造成误点。新增授权页时把 Activity 特征加进 [AUTH_PAGE_MARKERS]。
+     */
+    override fun keywordExtra(): List<String> = emptyList()
+
+    override fun keywordExtra(activity: String?): List<String> {
+        val act = activity ?: return emptyList()
+        return if (AUTH_PAGE_MARKERS.any { act.contains(it, ignoreCase = true) }) {
+            AUTH_KEYWORDS
+        } else {
+            emptyList()
+        }
+    }
 
     companion object {
         /**
@@ -44,6 +58,10 @@ class MiniProgramCapsuleProfile @Inject constructor() : AppAdProfile {
          * 空白/后缀变体，EQ 曾漏杀并导致点击仍在；配合 Provider 续取次优后误伤可控）。
          */
         val CAPSULE_SELECTORS = listOf("""[text*="关闭"]""", """[desc*="关闭"]""")
+
+        /** 只在这些授权页上追加「允许/同意」；避免正文/聊天中的同名文本被当按钮。 */
+        val AUTH_KEYWORDS = listOf("允许", "同意")
+        val AUTH_PAGE_MARKERS = listOf("SDKOAuthUI", "OAuth", "AuthPage", "Authorization")
 
         /** 包名 → 小程序容器/授权页 Activity 前缀（contains 判定；覆盖 AppBrandUI00/01/3、$App01 等后缀变体）。 */
         val CONTAINER_MARKERS: Map<String, List<String>> = mapOf(

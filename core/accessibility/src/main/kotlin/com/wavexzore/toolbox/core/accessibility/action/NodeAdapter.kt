@@ -1,7 +1,9 @@
 package com.wavexzore.toolbox.core.accessibility.action
 
 import android.content.Context
+import android.hardware.display.DisplayManager
 import android.os.Build
+import android.util.DisplayMetrics
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import com.google.android.accessibility.selecttospeak.SelectToSpeakService
@@ -118,6 +120,12 @@ internal fun allowsActiveWindowFallback(
 ): Boolean = requestedPkg == null || requestedPkg == selfPkg ||
     (activeRootPkg != null && activeRootPkg != selfPkg)
 
+/**
+ * 是否允许用 `rootInActiveWindow` 兜底取树。
+ * 显式请求非主屏时不允许：该 API 返回的是当前焦点屏，可能正是主屏。
+ */
+internal fun allowsActiveRootFallback(displayId: Int?): Boolean = displayId == null || displayId == 0
+
 /** 当前活动窗口树提供器（服务未连接/窗口缺失时返回 null）。 */
 @Singleton
 class WindowTreeProvider @Inject constructor(
@@ -164,9 +172,11 @@ class WindowTreeProvider @Inject constructor(
     ): Picked? {
         val selected = selectWindow(pkg, displayId, allowForeignFallback) ?: return null
         val info = infoOf(selected)
-        val metrics = context.resources.displayMetrics
+        // 兜底身份校验：返回值必须属于请求的显示器，跨屏树一律放弃。
+        if (displayId != null && info.displayId != displayId) return null
+        val (width, height) = displaySize(info.displayId)
         val tree = runCatching {
-            NodeAdapter.fromRoot(selected.root, metrics.widthPixels, metrics.heightPixels)
+            NodeAdapter.fromRoot(selected.root, width, height)
         }.getOrNull() ?: return null
         return Picked(
             tree = tree,
@@ -219,7 +229,10 @@ class WindowTreeProvider @Inject constructor(
             ?: windows.firstOrNull { runCatching { it.root?.packageName?.toString() == pkg && (displayId == null || displayIdOf(it) == displayId) }.getOrDefault(false) }
 
         val activeRoot = runCatching { service.rootInActiveWindow }.getOrNull()
-        val fallbackRoot = if (allowForeignFallback) {
+        // 指定了非主屏时禁止跨屏回退：无障碍服务可能看不到某些副屏（如 overlay display），
+        // rootInActiveWindow 会返回主屏窗口；拿主屏树当副屏用会导致坐标/归属全错。
+        val crossDisplayFallbackAllowed = allowsActiveRootFallback(displayId)
+        val fallbackRoot = if (allowForeignFallback && crossDisplayFallbackAllowed) {
             // 误操作修复（2026-10-19）：为其它包取树时，禁止活动窗回退到工具箱自身。
             // 目标 App 已切到后台/自身包时，rootInActiveWindow 会返回工具箱 UI——其中
             // 「自动跳过」等自建文案会命中跳过关键词，导致把自己特性开关点掉。
@@ -298,5 +311,27 @@ class WindowTreeProvider @Inject constructor(
     /** `AccessibilityWindowInfo.displayId` 仅 API 30+；低版本回退 0（主屏）。 */
     private fun displayIdOf(window: AccessibilityWindowInfo): Int =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) window.displayId else 0
+
+    /**
+     * 指定显示器的像素尺寸（用于节点屏内可见性判定）。
+     *
+     * 主屏/取不到时回退 `resources.displayMetrics`；副屏（背屏、`overlay_display_devices`）
+     * 必须用该 Display 的真实尺寸，否则按主屏宽度会把副屏右侧节点误判为不可见。
+     */
+    @Suppress("DEPRECATION")
+    private fun displaySize(displayId: Int): Pair<Int, Int> {
+        val fallback = context.resources.displayMetrics
+        if (displayId == 0) return fallback.widthPixels to fallback.heightPixels
+        val display = runCatching {
+            context.getSystemService(DisplayManager::class.java)?.getDisplay(displayId)
+        }.getOrNull() ?: return fallback.widthPixels to fallback.heightPixels
+        val metrics = DisplayMetrics()
+        val ok = runCatching { display.getRealMetrics(metrics) }.isSuccess
+        return if (ok && metrics.widthPixels > 0 && metrics.heightPixels > 0) {
+            metrics.widthPixels to metrics.heightPixels
+        } else {
+            fallback.widthPixels to fallback.heightPixels
+        }
+    }
 }
 

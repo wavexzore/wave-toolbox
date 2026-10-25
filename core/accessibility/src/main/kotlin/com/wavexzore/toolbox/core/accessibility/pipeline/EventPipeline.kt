@@ -5,6 +5,7 @@ import android.util.Log
 import com.wavexzore.toolbox.core.common.dispatchers.AppDispatchers
 import com.wavexzore.toolbox.core.data.settings.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -48,6 +49,8 @@ class EventPipeline @Inject constructor(
         val dispatched: Long = 0,
         val dropped: Long = 0,
         val throttled: Long = 0,
+        /** 因队列容量上限被淘汰的最旧事件数（不是 filter/throttle 丢弃）。 */
+        val overflow: Long = 0,
     )
 
     private val selfPackage = context.packageName
@@ -83,7 +86,9 @@ class EventPipeline @Inject constructor(
     private val droppedCount = AtomicLong()
     private val throttledCount = AtomicLong()
 
-    private val recentBuffer = ArrayDeque<RecentEvent>(LOG_LIMIT + 1)
+    // UI 线程的 clearLog 与 wave-event 的 appendRecent 会并发访问；用并发双端队列避免
+    // ArrayDeque 的并发修改异常/丢日志。
+    private val recentBuffer = ConcurrentLinkedDeque<RecentEvent>()
     private var recentSeq = 0L
     private var lastFlushAt = 0L
 
@@ -131,6 +136,7 @@ class EventPipeline @Inject constructor(
         dispatched = dispatchedCount.get(),
         dropped = droppedCount.get(),
         throttled = throttledCount.get(),
+        overflow = queue.droppedCount(),
     )
 
     fun clearLog() {

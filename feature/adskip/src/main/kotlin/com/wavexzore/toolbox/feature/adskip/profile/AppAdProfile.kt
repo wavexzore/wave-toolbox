@@ -19,6 +19,12 @@ interface AppAdProfile {
     /** 追加关键词（并入全局用户关键词之后）。 */
     fun keywordExtra(): List<String> = emptyList()
 
+    /**
+     * 按当前 Activity 追加关键词；默认退回包级 [keywordExtra]。
+     * 需要页面级门控的 profile（如小程序授权页）覆写此方法。
+     */
+    fun keywordExtra(activity: String?): List<String> = keywordExtra()
+
     /** 追加 vid 词（并入默认 `skip/jump/close`）。 */
     fun vidExtra(): List<String> = emptyList()
 

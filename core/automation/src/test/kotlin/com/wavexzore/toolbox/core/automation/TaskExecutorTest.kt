@@ -254,6 +254,50 @@ class TaskExecutorTest {
     }
 
     @Test
+    fun `cancel cancels all active runs`() = runTest {
+        val executor = TaskExecutor(FakeTaskEnv())
+        val statuses = mutableMapOf<String, TaskProgress.Status>()
+        val j1 = launch {
+            executor.run(task(Step.Delay(10_000), pkg = "com.a", id = "ta")).collect { p ->
+                if (p is TaskProgress.Finished) statuses["ta"] = p.status
+            }
+        }
+        val j2 = launch {
+            executor.run(task(Step.Delay(10_000), pkg = "com.b", id = "tb")).collect { p ->
+                if (p is TaskProgress.Finished) statuses["tb"] = p.status
+            }
+        }
+        runCurrent()
+        executor.cancel()
+        advanceUntilIdle()
+        assertEquals(TaskProgress.Status.CANCELLED, statuses["ta"])
+        assertEquals(TaskProgress.Status.CANCELLED, statuses["tb"])
+        j1.join()
+        j2.join()
+    }
+
+    @Test
+    fun `new run after cancel does not revive older run`() = runTest {
+        val executor = TaskExecutor(FakeTaskEnv())
+        var firstStatus: TaskProgress.Status? = null
+        val firstJob = launch {
+            executor.run(task(Step.Delay(5_000), pkg = "com.a", id = "ta")).collect { p ->
+                if (p is TaskProgress.Finished) firstStatus = p.status
+            }
+        }
+        runCurrent()
+        executor.cancel()
+
+        // 旧实现 run() 开头会把全局 cancelled 重置为 false，导致已取消的 ta 继续执行。
+        val second = executor.run(task(Step.Delay(10), pkg = "com.b", id = "tb")).toList()
+        advanceUntilIdle()
+
+        assertEquals(TaskProgress.Status.CANCELLED, firstStatus)
+        assertEquals(TaskProgress.Status.SUCCESS, statusOf(second))
+        firstJob.join()
+    }
+
+    @Test
     fun `empty task succeeds immediately`() = runTest {
         val progress = TaskExecutor(FakeTaskEnv()).run(task()).toList()
         assertEquals(TaskProgress.Status.SUCCESS, statusOf(progress))

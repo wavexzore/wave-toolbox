@@ -66,6 +66,10 @@ interface RuleDao {
     @Query("SELECT DISTINCT pkg FROM rule_apps")
     fun observePackages(): Flow<List<String>>
 
+    /** 某来源是否已导入（用于区分「全部规则被禁用」与「从未导入」）。 */
+    @Query("SELECT COUNT(*) FROM rule_groups WHERE source = :source")
+    suspend fun countBySource(source: String): Int
+
     @Upsert
     suspend fun upsertGroups(groups: List<RuleGroupEntity>)
 

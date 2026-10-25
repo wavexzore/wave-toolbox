@@ -249,6 +249,23 @@ class UpdateRepositoryTest {
     }
 
     @Test
+    fun `TooBig 重试走检查而不是重复下载同一包`() = runTest {
+        val repo = newRepo()
+        seedAvailable(repo, size = UpdateConfig.MAX_APK_BYTES + 1)
+        repo.download()
+        advanceUntilIdle()
+        assertEquals(ErrorKind.TooBig, (repo.state.value as UpdateState.Error).kind)
+
+        // retry 应重新检查 release，而不是对同一超大 asset 再次 download。
+        http.textResult = HttpText.Ok(releaseJson("v1.0.0"), "api.github.com")
+        repo.retry()
+        advanceUntilIdle()
+        assertEquals(2, http.requestedUrls.size)
+        assertEquals(0, http.downloadedTo.size)
+        assertTrue(repo.state.value is UpdateState.UpToDate)
+    }
+
+    @Test
     fun `下载 404 与 403 分流`() = runTest {
         val repo = newRepo()
         seedAvailable(repo)

@@ -13,6 +13,7 @@ import com.wavexzore.toolbox.core.rules.model.RawRuleGroup
 class RuleIndex private constructor(
     private val byPackage: Map<String, List<Entry>>,
     private val wildcard: List<Entry>,
+    private val missingVersionPolicy: VersionMatcher.MissingVersionPolicy,
 ) {
 
     data class Entry(val group: RawRuleGroup, val app: RawApp?, val rule: RawRule)
@@ -42,16 +43,16 @@ class RuleIndex private constructor(
         val app = entry.app
         if (!group.enabled || !rule.enabled) return false
         if (app != null && !app.enabled) return false
-        // 目标应用版本约束（组级 + 应用级）
-        if (!VersionMatcher.allows(group.versionCode, versionCode)) return false
-        if (!VersionMatcher.allowsVersionName(group.versionName, versionName)) return false
+        // 目标应用版本约束（组级 + 应用级）；版本未知默认不匹配。
+        if (!VersionMatcher.allows(group.versionCode, versionCode, missingVersionPolicy)) return false
+        if (!VersionMatcher.allowsVersionName(group.versionName, versionName, missingVersionPolicy)) return false
         if (app != null) {
-            if (!VersionMatcher.allows(app.versionCode, versionCode)) return false
-            if (!VersionMatcher.allowsVersionName(app.versionName, versionName)) return false
+            if (!VersionMatcher.allows(app.versionCode, versionCode, missingVersionPolicy)) return false
+            if (!VersionMatcher.allowsVersionName(app.versionName, versionName, missingVersionPolicy)) return false
         }
         // 规则级约束
-        if (!VersionMatcher.allows(rule.versionCode, versionCode)) return false
-        if (!VersionMatcher.allowsVersionName(rule.versionName, versionName)) return false
+        if (!VersionMatcher.allows(rule.versionCode, versionCode, missingVersionPolicy)) return false
+        if (!VersionMatcher.allowsVersionName(rule.versionName, versionName, missingVersionPolicy)) return false
         return ActivityMatcher.allows(rule.activityIds, rule.excludeActivityIds, activity)
     }
 
@@ -63,7 +64,10 @@ class RuleIndex private constructor(
             { it.rule.id },
         )
 
-        fun build(groups: List<RawRuleGroup>): RuleIndex {
+        fun build(
+            groups: List<RawRuleGroup>,
+            missingVersionPolicy: VersionMatcher.MissingVersionPolicy = VersionMatcher.MissingVersionPolicy.DENY,
+        ): RuleIndex {
             val byPackage = HashMap<String, MutableList<Entry>>()
             val wildcard = ArrayList<Entry>()
             groups.forEach { group ->
@@ -75,7 +79,7 @@ class RuleIndex private constructor(
                     }
                 }
             }
-            return RuleIndex(byPackage, wildcard)
+            return RuleIndex(byPackage, wildcard, missingVersionPolicy)
         }
     }
 }

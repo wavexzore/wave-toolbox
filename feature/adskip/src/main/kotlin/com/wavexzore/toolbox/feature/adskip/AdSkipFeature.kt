@@ -506,7 +506,7 @@ class AdSkipFeature @Inject constructor(
             groups = zoneGroups,
             profile = policy,
             activity = gating,
-            extraKeywords = extraKeywords + policy.keywordExtra() + zoneGroups.flatMap { it.keywords },
+            extraKeywords = extraKeywords + policy.keywordExtra(gating) + zoneGroups.flatMap { it.keywords },
             suppressedIdentities = suppressed,
             skipKeyword = popupContext || zoneGroups.any { it.suppressGeneric },
             selectorEngine = selectorEngine,

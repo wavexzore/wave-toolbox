@@ -27,11 +27,18 @@ class ClickVerifierTest {
     }
 
     @Test
-    fun `signature changes on bounds or text change`() {
-        val a = A11yTestTrees.node(text = "跳过")
-        val moved = A11yTestTrees.node(text = "跳过", left = 5)
-        val renamed = A11yTestTrees.node(text = "跳过广告")
+    fun `signature changes on bounds but ignores volatile text`() {
+        val a = A11yTestTrees.node(text = "跳过 5")
+        val moved = A11yTestTrees.node(text = "跳过 5", left = 5)
+        val countdown = A11yTestTrees.node(text = "跳过 4")
         assertNotEquals(ClickVerifier.signature(a), ClickVerifier.signature(moved))
-        assertNotEquals(ClickVerifier.signature(a), ClickVerifier.signature(renamed))
+        assertEquals(ClickVerifier.signature(a), ClickVerifier.signature(countdown))
+    }
+
+    @Test
+    fun `signature changes on class change`() {
+        val a = A11yTestTrees.node(cls = "android.widget.TextView")
+        val changed = A11yTestTrees.node(cls = "android.widget.Button")
+        assertNotEquals(ClickVerifier.signature(a), ClickVerifier.signature(changed))
     }
 }

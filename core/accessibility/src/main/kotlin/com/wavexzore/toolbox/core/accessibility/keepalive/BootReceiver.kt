@@ -9,8 +9,11 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 
 /**
  * 开机自启（T-009，D-005）：`BOOT_COMPLETED` + `LOCKED_BOOT_COMPLETED`（直启兜底）。
@@ -26,24 +29,30 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
-        when (intent?.action) {
-            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_LOCKED_BOOT_COMPLETED -> {
+        val action = intent?.action ?: return
+        if (action != Intent.ACTION_BOOT_COMPLETED && action != Intent.ACTION_LOCKED_BOOT_COMPLETED) return
+
+        // 广播回调在主线程；goAsync 给协程留出完成时间，避免 read DataStore 时阻塞主线程。
+        val pending = goAsync()
+        val appContext = context.applicationContext
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
                 val enabled = runCatching {
-                    runBlocking {
-                        EntryPointAccessors
-                            .fromApplication(context.applicationContext, BootEntryPoint::class.java)
-                            .settingsRepository()
-                            .bootAutostartEnabled
-                            .first()
-                    }
+                    EntryPointAccessors
+                        .fromApplication(appContext, BootEntryPoint::class.java)
+                        .settingsRepository()
+                        .bootAutostartEnabled
+                        .first()
                 }.getOrDefault(SettingsRepository.DEFAULT_BOOT_AUTOSTART)
                 if (!enabled) {
-                    Log.i(TAG, "boot: autostart disabled, skip (${intent.action})")
-                    return
+                    Log.i(TAG, "boot: autostart disabled, skip ($action)")
+                    return@launch
                 }
-                runCatching { KeepAliveService.start(context) }
-                    .onSuccess { Log.i(TAG, "boot: keepalive started (${intent.action})") }
+                runCatching { KeepAliveService.start(appContext) }
+                    .onSuccess { Log.i(TAG, "boot: keepalive started ($action)") }
                     .onFailure { Log.w(TAG, "boot: keepalive start failed", it) }
+            } finally {
+                pending.finish()
             }
         }
     }

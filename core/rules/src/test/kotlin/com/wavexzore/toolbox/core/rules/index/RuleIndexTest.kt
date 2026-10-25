@@ -1,6 +1,7 @@
 package com.wavexzore.toolbox.core.rules.index
 
 import com.wavexzore.toolbox.core.rules.TestRules
+import com.wavexzore.toolbox.core.rules.matcher.VersionMatcher
 import com.wavexzore.toolbox.core.rules.model.RawApp
 import com.wavexzore.toolbox.core.rules.model.RawRule
 import com.wavexzore.toolbox.core.rules.model.RawRuleGroup
@@ -105,6 +106,19 @@ class RuleIndexTest {
             TestRules.group(id = "g", apps = listOf(RawApp("com.a"), RawApp("com.b"))),
         )
         assertEquals(setOf("com.a", "com.b"), index.packages())
+    }
+
+    @Test
+    fun `missing version denied for versioned rule by default`() {
+        val group = TestRules.group(
+            apps = listOf(RawApp("com.a")),
+            rules = listOf(TestRules.rule(id = "versioned").copy(versionCode = VersionRange(min = 100))),
+        )
+        val strict = RuleIndex.build(listOf(group))
+        assertTrue(strict.query("com.a", versionCode = null).isEmpty())
+
+        val lenient = RuleIndex.build(listOf(group), VersionMatcher.MissingVersionPolicy.ALLOW)
+        assertEquals(listOf("versioned"), lenient.query("com.a", versionCode = null).map { it.rule.id })
     }
 
     @Test

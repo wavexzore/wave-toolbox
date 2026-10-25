@@ -6,6 +6,7 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -67,6 +69,10 @@ class UpdateRepository @Inject constructor(
     private var refreshRunning = false
     private var pendingRedownload = false
 
+    /** 下载代次：取消/新下载后旧 job 的收尾不得改动新状态。 */
+    @Volatile
+    private var downloadGeneration = 0L
+
     /** probe 首序：全部公开动作先 join 本任务。 */
     private val probeJob: Job = scope.launch { probe() }
 
@@ -101,6 +107,20 @@ class UpdateRepository @Inject constructor(
         }
     }
 
+    /**
+     * 检查结果只能在未进入 Downloading 且状态仍是检查起点时落地；
+     * [expected] 用于拦住「检查期间已有新下载完成」的迟到结果。
+     */
+    private suspend fun publishCheck(next: UpdateState, expected: UpdateState? = null): Boolean = mutex.withLock {
+        val current = _state.value
+        if (current is UpdateState.Downloading || (expected != null && current != expected)) {
+            false
+        } else {
+            _state.value = next
+            true
+        }
+    }
+
     private suspend fun refreshNormal(force: Boolean) {
         val now = clock.nowMs()
         if (!force) {
@@ -108,7 +128,7 @@ class UpdateRepository @Inject constructor(
             val last = prefs.lastCheckAt.first()
             if (last <= now && now - last < UpdateConfig.THROTTLE_MS) return
         }
-        mutex.withLock { _state.value = UpdateState.Checking }
+        if (!publishCheck(UpdateState.Checking)) return
         Log.i(TAG, "check start force=$force")
         val result = http.getText(UpdateConfig.API_LATEST_URL)
         runCatching { prefs.setLastCheckAt(clock.nowMs()) }
@@ -117,30 +137,30 @@ class UpdateRepository @Inject constructor(
             is HttpText.Ok -> {
                 val info = ReleaseParser.parse(result.text)
                 if (info == null) {
-                    mutex.withLock { _state.value = UpdateState.Error(ErrorKind.Parse) }
+                    publishCheck(UpdateState.Error(ErrorKind.Parse), expected = UpdateState.Checking)
                     Log.i(TAG, "check done: ${stateSummary()}")
                     return
                 }
                 val skipped = prefs.skippedTag.first()
-                mutex.withLock {
-                    _state.value = if (SemverCompare.isNewer(info.tag, platform.versionName())) {
-                        UpdateState.Available(info, ignored = sameVersion(skipped, info.tag))
-                    } else {
-                        UpdateState.UpToDate
-                    }
+                val next = if (SemverCompare.isNewer(info.tag, platform.versionName())) {
+                    UpdateState.Available(info, ignored = sameVersion(skipped, info.tag))
+                } else {
+                    UpdateState.UpToDate
                 }
+                publishCheck(next, expected = UpdateState.Checking)
             }
             is HttpText.HttpError -> {
-                mutex.withLock {
-                    _state.value = when (result.code) {
+                publishCheck(
+                    when (result.code) {
                         HTTP_NOT_FOUND -> UpdateState.NoRelease
                         HTTP_FORBIDDEN, HTTP_TOO_MANY_REQUESTS ->
                             UpdateState.Error(ErrorKind.RateLimited, code = result.code, resetAtEpochSec = result.retryAfterEpochSec)
                         else -> UpdateState.Error(ErrorKind.Http, code = result.code)
-                    }
-                }
+                    },
+                    expected = UpdateState.Checking,
+                )
             }
-            is HttpText.IoError -> mutex.withLock { _state.value = UpdateState.Error(mapIo(result.kind)) }
+            is HttpText.IoError -> publishCheck(UpdateState.Error(mapIo(result.kind)), expected = UpdateState.Checking)
         }
         Log.i(TAG, "check done: ${stateSummary()}")
     }
@@ -164,12 +184,13 @@ class UpdateRepository @Inject constructor(
         }
         val baseline = current.info?.tag ?: current.apkVersionName
         when {
-            sameVersion(info.tag, baseline) -> mutex.withLock {
-                _state.value = if (current.info == null) current.copy(info = info) else current
-            }
+            sameVersion(info.tag, baseline) -> publishCheck(
+                if (current.info == null) current.copy(info = info) else current,
+                expected = current,
+            )
             SemverCompare.isNewer(info.tag, baseline) -> {
                 val skipped = prefs.skippedTag.first()
-                mutex.withLock { _state.value = UpdateState.Available(info, ignored = sameVersion(skipped, info.tag)) }
+                publishCheck(UpdateState.Available(info, ignored = sameVersion(skipped, info.tag)), expected = current)
             }
             else -> Unit // 不更新：保持 Downloaded
         }
@@ -180,6 +201,7 @@ class UpdateRepository @Inject constructor(
     private fun startDownload() {
         scope.launch {
             probeJob.join()
+            val job = coroutineContext[Job]
             val plan = mutex.withLock {
                 if (activeJob?.isActive == true) return@launch
                 val candidate = when (val current = _state.value) {
@@ -193,38 +215,58 @@ class UpdateRepository @Inject constructor(
                     _state.value = UpdateState.Error(ErrorKind.TooBig, candidate)
                     return@launch
                 }
-                activeJob = coroutineContext[Job]
-                DownloadPlan(candidate, asset)
+                val generation = ++downloadGeneration
+                activeJob = job
+                // 在锁内进入 Downloading，避免 cancel 恰好落在「已登记 job、尚未置态」的窗口。
+                _state.value = UpdateState.Downloading(candidate, 0, 0, asset.size)
+                DownloadPlan(candidate, asset, generation)
             }
             try {
                 val dir = platform.updatesDir().apply { mkdirs() }
                 dir.listFiles { f -> f.isFile }?.forEach { it.delete() }
                 val target = File(dir, UpdateConfig.sanitizeForFileName(plan.asset.name))
-                mutex.withLock { _state.value = UpdateState.Downloading(plan.info, 0, 0, plan.asset.size) }
                 Log.i(TAG, "download start tag=${plan.info.tag} size=${plan.asset.size} digest=${plan.asset.digest != null}")
 
                 val result = http.downloadTo(plan.asset.url, target) { bytes, total ->
-                    val current = _state.value
-                    if (current is UpdateState.Downloading) {
-                        _state.value = current.copy(percent = percent(bytes, total), bytes = bytes, total = total)
+                    _state.update { current ->
+                        if (plan.generation != downloadGeneration || current !is UpdateState.Downloading) {
+                            current
+                        } else {
+                            current.copy(percent = percent(bytes, total), bytes = bytes, total = total)
+                        }
                     }
                 }
                 when (result) {
-                    is DownloadResult.Ok -> finishDownload(plan.info, plan.asset, target)
-                    is DownloadResult.HttpError -> mutex.withLock {
+                    is DownloadResult.Ok -> finishDownload(plan, target)
+                    is DownloadResult.HttpError -> publishDownloadError(plan.generation) {
                         _state.value = when (result.code) {
                             HTTP_NOT_FOUND -> UpdateState.Error(ErrorKind.Http, plan.info, code = result.code)
-                            HTTP_FORBIDDEN, HTTP_TOO_MANY_REQUESTS -> UpdateState.Error(ErrorKind.RateLimited, plan.info, code = result.code)
+                            HTTP_FORBIDDEN, HTTP_TOO_MANY_REQUESTS ->
+                                UpdateState.Error(ErrorKind.RateLimited, plan.info, code = result.code)
                             else -> UpdateState.Error(ErrorKind.Http, plan.info, code = result.code)
                         }
                     }
-                    is DownloadResult.IoError -> mutex.withLock {
+                    is DownloadResult.IoError -> publishDownloadError(plan.generation) {
                         _state.value = UpdateState.Error(mapIo(result.kind), plan.info)
                     }
                 }
+            } catch (t: CancellationException) {
+                throw t
+            } catch (t: Throwable) {
+                publishDownloadError(plan.generation) {
+                    _state.value = UpdateState.Error(mapIo(IoKind.Other), plan.info)
+                }
+                Log.w(TAG, "download failed", t)
             } finally {
-                mutex.withLock { activeJob = null }
+                mutex.withLock { if (job != null && activeJob === job) activeJob = null }
             }
+        }
+    }
+
+    /** 只有仍属于当前代次且仍在 Downloading 时才允许写入终态。 */
+    private suspend fun publishDownloadError(generation: Long, publish: () -> Unit) {
+        mutex.withLock {
+            if (generation == downloadGeneration && _state.value is UpdateState.Downloading) publish()
         }
     }
 
@@ -259,6 +301,8 @@ class UpdateRepository @Inject constructor(
             mutex.withLock {
                 val current = _state.value
                 if (current is UpdateState.Downloading) {
+                    // 先推进代次，再取消：旧 job 的 finally/错误分支不会再改状态。
+                    downloadGeneration++
                     activeJob?.cancel()
                     val skipped = prefs.skippedTag.first()
                     _state.value = UpdateState.Available(current.info, ignored = sameVersion(skipped, current.info.tag))
@@ -267,13 +311,24 @@ class UpdateRepository @Inject constructor(
         }
     }
 
-    /** 失败重试：下载侧（info!=null）→ 重下；检查侧 → 强制重查。 */
+    /** 失败重试：可重下的下载错误 → 重下；TooBig/安装失败/检查侧 → 强制重查。 */
     fun retry() {
         scope.launch {
             probeJob.join()
             val error = mutex.withLock { _state.value as? UpdateState.Error } ?: return@launch
-            if (error.info?.asset != null) startDownload() else refresh(force = true)
+            if (error.info?.asset != null && error.kind.isDownloadRetryable()) {
+                startDownload()
+            } else {
+                // TooBig 重下同一 asset 只会再次 TooBig；安装失败重下同一 APK 也大概率再失败。
+                // 回到检查侧，给新版本/更小包一次机会。
+                refresh(force = true)
+            }
         }
+    }
+
+    private fun ErrorKind.isDownloadRetryable(): Boolean = when (this) {
+        ErrorKind.TooBig, ErrorKind.Storage -> false
+        else -> true
     }
 
     // ---------------------------------------------------------------- 忽略 / 开关 / 关闭错误
@@ -345,20 +400,28 @@ class UpdateRepository @Inject constructor(
 
     // ---------------------------------------------------------------- 内部
 
-    private data class DownloadPlan(val info: ReleaseInfo, val asset: AssetRef)
+    private data class DownloadPlan(val info: ReleaseInfo, val asset: AssetRef, val generation: Long)
 
-    private suspend fun finishDownload(info: ReleaseInfo, asset: AssetRef, file: File) {
+    private suspend fun finishDownload(plan: DownloadPlan, file: File) {
+        val info = plan.info
+        val asset = plan.asset
         val sizeOk = asset.size <= 0 || file.length() == asset.size
         val digestOk = asset.digest == null ||
             Sha256.hex(file).equals(asset.digest.substringAfter(':'), ignoreCase = true)
         if (!sizeOk || !digestOk) {
             Log.w(TAG, "verify failed: sizeOk=$sizeOk digestOk=$digestOk tag=${info.tag}")
-            mutex.withLock { _state.value = UpdateState.Error(ErrorKind.VerifyFailed, info) }
+            publishDownloadError(plan.generation) {
+                _state.value = UpdateState.Error(ErrorKind.VerifyFailed, info)
+            }
             return
         }
         if (asset.digest == null) Log.w(TAG, "digest missing, size+signature only")
         val apkVersion = platform.readApkVersion(file) ?: info.tag
-        mutex.withLock { _state.value = UpdateState.Downloaded(file, info, apkVersion) }
+        mutex.withLock {
+            if (plan.generation == downloadGeneration && _state.value is UpdateState.Downloading) {
+                _state.value = UpdateState.Downloaded(file, info, apkVersion)
+            }
+        }
         Log.i(TAG, "download verified tag=${info.tag}")
     }
 

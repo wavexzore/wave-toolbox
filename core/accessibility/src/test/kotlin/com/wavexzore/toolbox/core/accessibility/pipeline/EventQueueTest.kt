@@ -18,6 +18,7 @@ class EventQueueTest {
         assertEquals("event3", queue.receive().text)
         assertEquals("event4", queue.receive().text)
         assertEquals("event5", queue.receive().text)
+        assertEquals(2L, queue.droppedCount())
     }
 
     @Test

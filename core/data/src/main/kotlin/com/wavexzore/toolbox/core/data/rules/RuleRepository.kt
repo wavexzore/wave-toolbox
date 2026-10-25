@@ -46,6 +46,9 @@ class RuleRepository @Inject constructor(
     suspend fun currentGroups(): List<RawRuleGroup> =
         db.ruleDao().enabledGroups().mapNotNull { runCatching { decode(it.json) }.getOrNull() }
 
+    /** 内置规则源是否已导入（全部禁用也算已导入，不能再用 enabled 列表为空判断）。 */
+    suspend fun hasBuiltinSource(): Boolean = db.ruleDao().countBySource(SOURCE_BUILTIN) > 0
+
     suspend fun buildIndex(): RuleIndex = RuleIndex.build(currentGroups())
 
     fun observePackages(): Flow<Set<String>> =
@@ -53,6 +56,13 @@ class RuleRepository @Inject constructor(
 
     fun observeGroupCount(): Flow<Int> =
         db.ruleDao().observeEnabledGroups().map { it.size }
+
+    /**
+     * 规则表变更信号（每次 enabled 组数据变化触发一次）。
+     * 引擎据此丢弃旧 [RuleIndex]，下一次事件再重建；无需周期全表扫描。
+     */
+    fun observeIndexRevision(): Flow<Unit> =
+        db.ruleDao().observeEnabledGroups().map { Unit }
 
     suspend fun recentErrors(): List<RuleErrorEntity> = db.ruleDao().recentErrors()
 

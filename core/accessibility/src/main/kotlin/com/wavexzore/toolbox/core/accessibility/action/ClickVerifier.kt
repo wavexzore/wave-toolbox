@@ -11,9 +11,14 @@ object ClickVerifier {
     fun shouldRetry(attemptsUsed: Int, maxAttempts: Int, nodeStillPresent: Boolean): Boolean =
         nodeStillPresent && attemptsUsed < maxAttempts
 
-    /** 节点特征签名（同一性近似判定）：bounds + text + desc + class。 */
+    /**
+     * 节点特征签名（同一性近似判定）：bounds + desc + class。
+     *
+     * 不包含 text：倒计时/秒数等文本会随时间变化，若纳入签名会把「仍在原地的节点」
+     * 误判为已消失，从而放弃 350ms 补点。
+     */
     fun signature(node: NodeView): String {
         val b = node.bounds
-        return "${b.left},${b.top},${b.right},${b.bottom}|${node.text.orEmpty()}|${node.contentDescription.orEmpty()}|${node.className.orEmpty()}"
+        return "${b.left},${b.top},${b.right},${b.bottom}|${node.contentDescription.orEmpty()}|${node.className.orEmpty()}"
     }
 }

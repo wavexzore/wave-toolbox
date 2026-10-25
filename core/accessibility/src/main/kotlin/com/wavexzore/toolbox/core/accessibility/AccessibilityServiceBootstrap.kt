@@ -110,7 +110,10 @@ object AccessibilityServiceBootstrap {
                 Thread.currentThread().interrupt()
                 return Result.INTERRUPTED
             }
-            if (!gateway.putEnabledAccessibilityServices(mergeEnabledServices(enabledServices, ownComponent))) {
+            // 等待期间可能有第三方服务被系统/用户加入；恢复阶段必须重新读取当前列表，
+            // 否则会用旧快照覆盖，导致他方无障碍服务被静默移除。
+            val latestServices = gateway.getEnabledAccessibilityServices()
+            if (!gateway.putEnabledAccessibilityServices(mergeEnabledServices(latestServices, ownComponent))) {
                 return Result.WRITE_FAILED
             }
             if (gateway.putAccessibilityEnabled(true)) Result.ENABLED else Result.WRITE_FAILED

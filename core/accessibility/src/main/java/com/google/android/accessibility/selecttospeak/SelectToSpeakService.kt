@@ -48,7 +48,12 @@ class SelectToSpeakService : AccessibilityService() {
     @Inject
     lateinit var featureRegistry: FeatureRegistry
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var serviceScope = newServiceScope()
+
+    /** 系统可能重复回调 onServiceConnected；collector 只启动一次，避免重复消费事件。 */
+    private var collectorsStarted = false
+
+    private fun newServiceScope() = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** T-009：1×1 overlay 保活（第二重，与 FGS 独立）。 */
     private val overlayKeepAlive by lazy { OverlayKeepAlive(this) }
@@ -63,13 +68,18 @@ class SelectToSpeakService : AccessibilityService() {
         instance = this
         isConnected = true
         applyStaticServiceInfo()
-        // 幂等；后续重复连接仅覆盖一次收集
-        serviceScope.launch {
-            settingsRepository.engineEnabled.collect { engineEnabled = it }
-        }
-        serviceScope.launch {
-            // T-004：管线出线事件交 ANR 守卫（系统无响应对话框自动点「等待」）
-            pipeline.events.collect { anrGuard.onEvent(it) }
+        // 幂等；系统重复连接时不再叠加 collector。onDestroy 会 cancel 旧 scope，
+        // 因此重连时必须换一个新的 scope，不能复用已取消的 Job。
+        if (!collectorsStarted) {
+            serviceScope = newServiceScope()
+            collectorsStarted = true
+            serviceScope.launch {
+                settingsRepository.engineEnabled.collect { engineEnabled = it }
+            }
+            serviceScope.launch {
+                // T-004：管线出线事件交 ANR 守卫（系统无响应对话框自动点「等待」）
+                pipeline.events.collect { anrGuard.onEvent(it) }
+            }
         }
         // T-007：规则引擎（事件 → 匹配 → 动作）
         ruleEngine.start()
@@ -125,6 +135,7 @@ class SelectToSpeakService : AccessibilityService() {
         ruleEngine.stop()
         featureRegistry.stop()
         overlayKeepAlive.detach()
+        collectorsStarted = false
         serviceScope.cancel()
         Log.i(TAG, "onDestroy: totalEvents=${eventCount.get()}")
         super.onDestroy()

@@ -2,7 +2,6 @@ package com.wavexzore.toolbox.core.accessibility.action
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
-import android.content.Context
 import android.graphics.Path
 import android.os.Handler
 import android.os.Looper
@@ -12,7 +11,6 @@ import com.wavexzore.toolbox.core.common.dispatchers.AppDispatchers
 import com.wavexzore.toolbox.core.data.settings.SettingsRepository
 import com.wavexzore.toolbox.core.rules.model.RawRule
 import com.wavexzore.toolbox.core.rules.model.RuleAction
-import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.roundToInt
@@ -31,7 +29,6 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 @Singleton
 class ActionExecutor @Inject constructor(
-    @ApplicationContext private val context: Context,
     private val dispatchers: AppDispatchers,
     settingsRepository: SettingsRepository,
 ) {
@@ -60,12 +57,12 @@ class ActionExecutor @Inject constructor(
             when (rule.action) {
                 RuleAction.NONE -> Result(true, "none")
                 RuleAction.BACK -> Result(service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK), "back")
-                RuleAction.CLICK -> click(service, target, screenWidth, long = false)
-                RuleAction.LONG_CLICK -> click(service, target, screenWidth, long = true)
+                RuleAction.CLICK -> click(service, target, screenWidth, screenHeight, long = false)
+                RuleAction.LONG_CLICK -> click(service, target, screenWidth, screenHeight, long = true)
                 RuleAction.CLICK_CENTER -> target?.let { view ->
                     val center = ClickResolver.centerOf(view.bounds)
                         ?: return@withContext Result(false, "gesture.center", reason = "零面积")
-                    Result(tap(service, center.first, center.second), "gesture.center", view.describe())
+                    Result(tap(service, center.first, center.second, screenWidth, screenHeight), "gesture.center", view.describe())
                 } ?: Result(false, "gesture.center", reason = "无目标节点")
                 RuleAction.POSITION -> position(service, rule, screenWidth, screenHeight)
                 RuleAction.SCROLL_FORWARD -> scroll(target, forward = true)
@@ -73,7 +70,13 @@ class ActionExecutor @Inject constructor(
             }
         }
 
-    private suspend fun click(service: AccessibilityService, target: AndroidNodeView?, screenWidth: Int, long: Boolean): Result {
+    private suspend fun click(
+        service: AccessibilityService,
+        target: AndroidNodeView?,
+        screenWidth: Int,
+        screenHeight: Int,
+        long: Boolean,
+    ): Result {
         if (target == null) return Result(false, "performAction", reason = "无目标节点")
         val resolution = ClickResolver.resolve(target, NodeAdapter.ancestorsNearestFirst(target), screenWidth)
         val action = if (long) AccessibilityNodeInfo.ACTION_LONG_CLICK else AccessibilityNodeInfo.ACTION_CLICK
@@ -86,12 +89,12 @@ class ActionExecutor @Inject constructor(
                 }
                 if (!fallbackEnabled) return Result(false, "performAction", reason = "performAction=false 且兜底关闭")
                 val center = ClickResolver.centerOf(view.bounds) ?: return Result(false, "performAction", reason = "兜底无坐标")
-                val ok = gesture(service, center.first, center.second, if (long) LONG_PRESS_MS else TAP_MS)
+                val ok = gesture(service, center.first, center.second, if (long) LONG_PRESS_MS else TAP_MS, screenWidth, screenHeight)
                 Result(ok, if (long) "gesture.long" else "gesture", view.describeOrNull())
             }
             is ClickResolver.Resolution.CenterTap -> {
                 if (!fallbackEnabled) return Result(false, "gesture", reason = "兜底关闭")
-                val ok = gesture(service, resolution.x, resolution.y, if (long) LONG_PRESS_MS else TAP_MS)
+                val ok = gesture(service, resolution.x, resolution.y, if (long) LONG_PRESS_MS else TAP_MS, screenWidth, screenHeight)
                 Result(ok, "gesture.center", target.describe())
             }
             ClickResolver.Resolution.NoTarget -> Result(false, "none", reason = "无可用目标（零面积）")
@@ -104,7 +107,7 @@ class ActionExecutor @Inject constructor(
             ?: return Result(false, "gesture.position", reason = "x 缺失")
         val y = pos.y ?: pos.yPercent?.let { (screenHeight * it / 100f).roundToInt() }
             ?: return Result(false, "gesture.position", reason = "y 缺失")
-        val ok = gesture(service, x, y, TAP_MS)
+        val ok = gesture(service, x, y, TAP_MS, screenWidth, screenHeight)
         return Result(ok, "gesture.position", "($x,$y)")
     }
 
@@ -117,14 +120,29 @@ class ActionExecutor @Inject constructor(
         return Result(ok, if (forward) "scroll.forward" else "scroll.backward", scrollable.describe())
     }
 
-    private suspend fun tap(service: AccessibilityService, x: Int, y: Int): Boolean = gesture(service, x, y, TAP_MS)
+    private suspend fun tap(
+        service: AccessibilityService,
+        x: Int,
+        y: Int,
+        screenWidth: Int,
+        screenHeight: Int,
+    ): Boolean = gesture(service, x, y, TAP_MS, screenWidth, screenHeight)
 
-    private suspend fun gesture(service: AccessibilityService, x: Int, y: Int, durationMs: Long): Boolean =
+    private suspend fun gesture(
+        service: AccessibilityService,
+        x: Int,
+        y: Int,
+        durationMs: Long,
+        screenWidth: Int,
+        screenHeight: Int,
+    ): Boolean =
         withTimeoutOrNull(GESTURE_TIMEOUT_MS) {
             suspendCancellableCoroutine { cont ->
-                val metrics = context.resources.displayMetrics
-                val safeX = x.coerceIn(0, (metrics.widthPixels - 1).coerceAtLeast(0))
-                val safeY = y.coerceIn(0, (metrics.heightPixels - 1).coerceAtLeast(0))
+                // 坐标属于目标窗口所在显示器；不能再用主屏 metrics 截断副屏坐标。
+                val maxX = (screenWidth - 1).coerceAtLeast(0)
+                val maxY = (screenHeight - 1).coerceAtLeast(0)
+                val safeX = if (screenWidth > 0) x.coerceIn(0, maxX) else x
+                val safeY = if (screenHeight > 0) y.coerceIn(0, maxY) else y
                 val path = Path().apply { moveTo(safeX.toFloat(), safeY.toFloat()) }
                 val gesture = GestureDescription.Builder()
                     .addStroke(GestureDescription.StrokeDescription(path, 0L, durationMs))

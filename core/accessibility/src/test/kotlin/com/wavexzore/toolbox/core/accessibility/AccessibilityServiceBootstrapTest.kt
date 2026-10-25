@@ -114,7 +114,25 @@ class AccessibilityServiceBootstrapTest {
 
         assertEquals(AccessibilityServiceBootstrap.Result.ENABLED, AccessibilityServiceBootstrap.rebindEnabled(gateway, OWN, sleep = {}))
         assertEquals("a/b:c/d", gateway.enabledServicesValues[0])
-        assertEquals("a/b:$OWN:c/d", gateway.enabledServicesValues[1])
+        // 恢复阶段按最新列表合并；自身位置可能移到末尾，但顺序仍是「先移除、后恢复」。
+        assertEquals("a/b:c/d:$OWN", gateway.enabledServicesValues[1])
+    }
+
+    /** 等待期间出现的新服务不能被旧快照覆盖。 */
+    @Test
+    fun rebindEnabledReReadsServicesBeforeRestore() {
+        val gateway = FakeGateway("a/b:$OWN")
+
+        assertEquals(
+            AccessibilityServiceBootstrap.Result.ENABLED,
+            AccessibilityServiceBootstrap.rebindEnabled(
+                gateway,
+                OWN,
+                sleep = { gateway.enabledServices = "a/b:c/d" },
+            ),
+        )
+        assertEquals("a/b:c/d:$OWN", gateway.enabledServices)
+        assertEquals("a/b:c/d:$OWN", gateway.enabledServicesValues[1])
     }
 
     /** 自身为唯一服务：移除阶段写空串，恢复阶段写回自身。 */

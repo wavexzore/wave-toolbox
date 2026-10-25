@@ -34,4 +34,12 @@ class WindowFallbackGuardTest {
         // 归属不明时宁可放弃：无法证明不是工具箱自身窗口。
         assertFalse(allowsActiveWindowFallback(requestedPkg = "com.tencent.mm", activeRootPkg = null, selfPkg = self))
     }
+
+    @Test
+    fun `non primary display never falls back to active root`() {
+        // rootInActiveWindow 只代表当前焦点屏，可能是主屏；副屏取树不能跨屏回退。
+        assertFalse(allowsActiveRootFallback(displayId = 2))
+        assertTrue(allowsActiveRootFallback(displayId = 0))
+        assertTrue(allowsActiveRootFallback(displayId = null))
+    }
 }

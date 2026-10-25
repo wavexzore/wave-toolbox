@@ -44,7 +44,7 @@ object ClickResolver {
     }
 
     /** 过滤类判定（可点击但不宜作为 performAction 直接目标；R-209 起由 [NodeFilters] 唯一实现）。 */
-    fun isFilteredTarget(node: NodeView, screenWidth: Int): Boolean =
+    internal fun isFilteredTarget(node: NodeView, screenWidth: Int): Boolean =
         NodeFilters.isFilteredPerformTarget(node, screenWidth)
 
     fun isCheckableClass(className: String?): Boolean = NodeFilters.isCheckableClass(className)

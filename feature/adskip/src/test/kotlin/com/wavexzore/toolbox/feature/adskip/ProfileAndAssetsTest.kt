@@ -87,7 +87,12 @@ class ProfileAndAssetsTest {
         assertEquals(capsule, profile.suppressOn("com.tencent.mm.plugin.webview.ui.tools.SDKOAuthUI"))
         assertTrue(profile.suppressOn("com.tencent.mm.ui.LauncherUI").isEmpty())
         assertTrue(profile.suppressOn(null).isEmpty())
-        assertEquals(listOf("允许", "同意"), profile.keywordExtra())
+        assertTrue(profile.keywordExtra().isEmpty())
+        assertEquals(
+            listOf("允许", "同意"),
+            profile.keywordExtra("com.tencent.mm.plugin.webview.ui.tools.SDKOAuthUI"),
+        )
+        assertTrue(profile.keywordExtra("com.tencent.mm.ui.LauncherUI").isEmpty())
         assertFalse(profile.forceGesture())
     }
 

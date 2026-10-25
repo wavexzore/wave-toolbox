@@ -125,9 +125,20 @@ class SettingsRepository @Inject constructor(
         context.settingsDataStore.edit { prefs -> prefs[KEY_UPDATE_SKIPPED_TAG] = tag }
     }
 
-    /** 重置全部设置（不含：数据库统计 / 特性配置；含 `update.*` 更新检查状态）。 */
+    /** 重置全部设置（保留 `feature.*` 特性开关；含 `update.*` 更新检查状态）。 */
     suspend fun clearAll() {
-        context.settingsDataStore.edit { prefs -> prefs.clear() }
+        context.settingsDataStore.edit { prefs ->
+            // clear() 会连 feature.<id>.enabled 一起清掉；先快照再恢复，避免重置设置后
+            // 所有特性被悄悄切回默认值。动态键必须按前缀保留，不能写死特性 id。
+            val featurePreferences = prefs.asMap()
+                .filterKeys { it.name.startsWith(FEATURE_KEY_PREFIX) }
+                .map { (key, value) -> key to value }
+            prefs.clear()
+            featurePreferences.forEach { (key, value) ->
+                @Suppress("UNCHECKED_CAST")
+                prefs[key as Preferences.Key<Any>] = value
+            }
+        }
     }
 
     suspend fun setContentThrottleMs(ms: Int) {
@@ -141,6 +152,8 @@ class SettingsRepository @Inject constructor(
     }
 
     companion object {
+        const val FEATURE_KEY_PREFIX = "feature."
+
         val KEY_ENGINE_ENABLED = booleanPreferencesKey("engine.enabled")
         val KEY_CONTENT_THROTTLE_MS = intPreferencesKey("engine.contentThrottleMs")
         val KEY_ALLOW_PACKAGES = stringSetPreferencesKey("engine.allowPackages")

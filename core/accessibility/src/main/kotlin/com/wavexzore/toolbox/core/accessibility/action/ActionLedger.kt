@@ -78,9 +78,11 @@ class ActionLedger {
         lastActionAt[ruleId] = now
     }
 
-    fun countOf(ruleId: String): Int = counts[ruleId] ?: 0
+    /** 测试/诊断用：当前规则已执行次数。 */
+    internal fun countOf(ruleId: String): Int = counts[ruleId] ?: 0
 
-    fun resetAll() {
+    /** 测试用：清空计数与冷却（生产路径由页面实例切换自动清理）。 */
+    internal fun resetAll() {
         counts.clear()
         lastActionAt.clear()
     }
