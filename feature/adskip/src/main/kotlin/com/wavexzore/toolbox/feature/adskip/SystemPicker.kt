@@ -17,16 +17,23 @@ package com.wavexzore.toolbox.feature.adskip
  * Q-212）；与 [PkgMode] 无关；系统设置的内置规则包保留但不再可达。
  * 2026-10-22（D-238）：补 `com.android.systemui` / `miui.systemui.plugin`——通知栏、
  * 锁屏、系统插件不是广告，真机日志显示它们仍会被通用兜底扫描（无误点但浪费预算）。
+ * 2026-10-26（Xiaomi M154FF / Android 17）：补 `com.milink.service`、`com.android.fileexplorer`、
+ * `com.xiaomi.smarthome`——控制中心设备卡片（MLCard，STATUS_BAR_SUB_PANEL）被通用关键词
+ * 「关闭」命中两次，直接把「智能蒸发式冷风扇」切换了状态；HyperOS 文件选择器同样被
+ * 「关闭」命中一次。设备控制类界面不是广告，自动点击会改变真实设备状态。
  * 名单扩展需真机实测证据（如文件选择器 `com.android.documentsui` 暂未收）。
  */
 internal object SystemPicker {
 
-    /** 系统界面包名（分享/「打开方式」选择器 + 系统设置 + 系统 UI 宿主）。 */
+    /** 系统界面包名（分享/「打开方式」选择器 + 系统设置 + 系统 UI 宿主 + 设备控制）。 */
     val PKGS: Set<String> = setOf(
         "com.android.intentresolver",
         "com.android.settings",
         "com.android.systemui",
         "miui.systemui.plugin",
+        "com.android.fileexplorer",
+        "com.milink.service",
+        "com.xiaomi.smarthome",
     )
 
     /** 息屏显示（AOD）包：桌面/息屏不是广告，对齐李跳跳白名单。 */

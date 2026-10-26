@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** D-226 系统界面豁免：名单判定（相册-发送被误点修复；2026-10-19 收入系统设置、桌面/AOD）。 */
+/** D-226 系统界面豁免：名单判定（相册-发送被误点修复；2026-10-19 收入系统设置、桌面/AOD；2026-10-26 收入设备控制与 HyperOS 文件选择器）。 */
 class SystemPickerTest {
 
     @Test
@@ -49,6 +49,14 @@ class SystemPickerTest {
     }
 
     @Test
+    fun `设备控制与文件选择器豁免`() {
+        // 控制中心设备卡片/米家会改变真实设备状态；HyperOS 文件选择器会被「关闭」秒关。
+        assertTrue(SystemPicker.exempt("com.milink.service"))
+        assertTrue(SystemPicker.exempt("com.xiaomi.smarthome"))
+        assertTrue(SystemPicker.exempt("com.android.fileexplorer"))
+    }
+
+    @Test
     fun `静态名单含选择器、设置与系统 UI`() {
         assertEquals(
             setOf(
@@ -56,6 +64,9 @@ class SystemPickerTest {
                 "com.android.settings",
                 "com.android.systemui",
                 "miui.systemui.plugin",
+                "com.android.fileexplorer",
+                "com.milink.service",
+                "com.xiaomi.smarthome",
             ),
             SystemPicker.PKGS,
         )
