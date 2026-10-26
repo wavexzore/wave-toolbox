@@ -191,6 +191,51 @@ class WindowTreeProvider @Inject constructor(
     }
 
     /**
+     * 指定显示器的树（仅诊断使用，不参与自动点击链）。
+     *
+     * `getWindows()` 只返回服务所在显示器（通常是主屏）的窗口；背屏等副屏窗口位于
+     * `getWindowsOnAllDisplays()`。这里按 displayId 精确读取，允许选取该屏非
+     * focused/active 的应用窗口，但**绝不**回退到其它显示器。
+     */
+    fun currentTreeForDisplay(displayId: Int): Picked? {
+        val service = SelectToSpeakService.instance ?: return null
+        val windows = windowsOnDisplay(service, displayId)
+        val applicationWindows = windows.filter { window ->
+            val root = runCatching { window.root }.getOrNull()
+            root != null && (window.type == AccessibilityWindowInfo.TYPE_APPLICATION || root.packageName != null)
+        }
+        val window = applicationWindows.firstOrNull { it.isFocused }
+            ?: applicationWindows.firstOrNull { it.isActive }
+            ?: applicationWindows.firstOrNull()
+            ?: return null
+        if (displayIdOf(window) != displayId) return null
+        val root = runCatching { window.root }.getOrNull() ?: return null
+        val info = infoOf(Selected(window, root))
+        val (width, height) = displaySize(info.displayId)
+        val tree = runCatching { NodeAdapter.fromRoot(root, width, height) }.getOrNull() ?: return null
+        return Picked(
+            tree = tree,
+            displayId = info.displayId,
+            windowType = info.windowType,
+            rootPkg = info.rootPkg,
+            windowBounds = info.bounds,
+            isActive = info.isActive,
+            isFocused = info.isFocused,
+            windowId = info.windowId,
+        )
+    }
+
+    private fun windowsOnDisplay(
+        service: SelectToSpeakService,
+        displayId: Int,
+    ): List<AccessibilityWindowInfo> {
+        val all = runCatching { service.windowsOnAllDisplays[displayId] }.getOrNull()
+        if (!all.isNullOrEmpty()) return all
+        return runCatching { service.windows }.getOrNull().orEmpty()
+            .filter { displayIdOf(it) == displayId }
+    }
+
+    /**
      * 目标包当前窗口的元数据（不建树；D-235）。
      *
      * 与 [currentTree] 共用同一选窗口径，供自动点击链「先判形态、后建树」：

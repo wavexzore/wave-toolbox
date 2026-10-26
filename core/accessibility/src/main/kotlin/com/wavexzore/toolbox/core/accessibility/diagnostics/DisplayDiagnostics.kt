@@ -98,12 +98,7 @@ class DisplayDiagnostics @Inject constructor(
             return TreeProbe(ok = false, rootPkg = null, message = "无障碍服务未连接")
         }
         val picked = runCatching {
-            treeProvider.currentTree(
-                pkg = null,
-                displayId = displayId,
-                // 主屏允许 rootInActiveWindow 兜底；非主屏保持 fail-safe，禁止跨屏回退。
-                allowForeignFallback = displayId == Display.DEFAULT_DISPLAY,
-            )
+            treeProvider.currentTreeForDisplay(displayId)
         }.getOrElse { t ->
             return TreeProbe(ok = false, rootPkg = null, message = "取树异常: ${t.message}")
         } ?: return TreeProbe(
@@ -130,10 +125,14 @@ class DisplayDiagnostics @Inject constructor(
 
     private fun windowsOf(displayId: Int): List<WindowProbe> {
         val service = SelectToSpeakService.instance ?: return emptyList()
-        val windows = runCatching { service.windows }.getOrNull().orEmpty()
-        return windows.mapNotNull { window ->
-            val id = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) window.displayId else 0
-            if (id != displayId) return@mapNotNull null
+        // 背屏等副屏窗口不在 getWindows()（服务所在显示器）里，必须走 all displays。
+        val windows = runCatching { service.windowsOnAllDisplays[displayId] }.getOrNull()
+            ?: runCatching { service.windows }.getOrNull().orEmpty()
+                .filter { window ->
+                    val id = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) window.displayId else 0
+                    id == displayId
+                }
+        return windows.map { window ->
             WindowProbe(
                 id = window.id,
                 type = window.type,
